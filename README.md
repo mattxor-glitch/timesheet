@@ -1,0 +1,38 @@
+# Timesheet
+
+A simple Android stopwatch timesheet. Projects appear as tiles; tap one to start its timer.
+Starting another project stops the current one, and tapping the running tile stops it.
+
+## Features
+
+- **Project tiles**: number and name, with today's running total on each tile. Long-press a tile to edit or remove it (history is kept).
+- **Daily reset**: every timer starts at zero each day. A timer left running at midnight is stopped,
+  or carried into the new day if you turn on *Keep timer running past midnight*.
+- **History**: previous days, with per-project and daily totals in `h:mm` and decimal hours.
+- **History retention**: 1 week up to 5 years, or *Never delete* (the default).
+- **Size warning**: a banner appears when the database is over 50 MB.
+- **Clear history before a date**: Settings → *Clear history before a date…* (shown as mm/dd/yyyy).
+  The database is compacted afterwards so the file actually shrinks.
+
+## No launch warnings
+
+- Targets the current Android API level (36), so there's no "built for an older version of Android" dialog.
+- Requests no permissions, so there are no permission prompts.
+- Contains no native libraries, so there's no 16 KB page-size compatibility dialog on Android 15+.
+- Release builds are minified and signed with a fixed key, so updates install over the old version.
+- Handles edge-to-edge drawing itself, as Android 15+ expects.
+
+## Installing
+
+Every push to `main` builds a signed APK with GitHub Actions and publishes it under
+[Releases](../../releases/latest). On your phone, open the latest release, tap the `.apk`
+under *Assets*, and allow your browser to install apps if Android asks.
+
+## Signing
+
+The release key is in `signing/`. Keep it. Updates only install over an existing copy
+when they are signed with the same key.
+
+## Building locally
+
+Open the project in Android Studio, or run `./gradlew assembleRelease` with JDK 17 and the Android SDK.
