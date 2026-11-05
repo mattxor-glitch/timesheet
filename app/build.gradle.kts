@@ -1,3 +1,4 @@
+import java.util.Properties
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -11,7 +12,7 @@ plugins {
 val buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
 // Release key lives in /signing so every build (CI or local) is signed the same way
 // and installs as an update over the previous version.
-val signingProps = java.util.Properties().apply {
+val signingProps = Properties().apply {
     val f = rootProject.file("signing/signing.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
