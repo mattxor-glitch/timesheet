@@ -5,9 +5,16 @@ Starting another project stops the current one, and tapping the running tile sto
 
 ## Features
 
-- **Project tiles**: number and name, with today's running total on each tile. Long-press a tile to edit or remove it (history is kept).
+- **Project tiles**: number and name, with today's running total on each tile. Long-press a tile to add time, change the start time, or edit/remove it (history is kept).
 - **Daily reset**: every timer starts at zero each day. A timer left running at midnight is stopped,
   or carried into the new day if you turn on *Keep timer running past midnight*.
+- **Time-stamped log**: every start and stop is recorded with its clock time. Tap *Today's log* on the
+  Timers screen, or tap a day in History, to see each entry.
+- **Add time**: long-press a tile → *Add time for today* to add a total (hours and minutes) without a start
+  or stop time. It's logged as a **manual** entry stamped with when you added it, and can be deleted.
+- **Change start time**: while a timer is running, tap *Change start* (or long-press its tile). The entry is
+  marked **manual** and shows the original start and when it was changed. It can't go before midnight or
+  before the previous timer's stop time.
 - **History**: previous days, with per-project and daily totals in `h:mm` and decimal hours.
 - **History retention**: 1 week up to 5 years, or *Never delete* (the default).
 - **Size warning**: a banner appears when the database is over 50 MB.

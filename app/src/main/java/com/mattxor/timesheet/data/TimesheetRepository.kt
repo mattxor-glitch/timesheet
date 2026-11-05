@@ -28,6 +28,56 @@ class TimesheetRepository(context: Context, val settings: Settings) {
         dao.getRunning().forEach { dao.closeEntry(it.id, now) }
     }
 
+    /** Adds a total amount of time to [projectId] for today, stamped with when it was added. */
+    suspend fun addManualTime(projectId: Long, durationMillis: Long, now: Long = System.currentTimeMillis()) {
+        require(durationMillis > 0)
+        dao.insertEntry(
+            TimeEntry(
+                projectId = projectId,
+                day = dayOf(now),
+                startMillis = now,
+                endMillis = now,
+                manual = true,
+                durationMillis = durationMillis,
+                createdAtMillis = now,
+            )
+        )
+    }
+
+    suspend fun deleteManualEntry(entry: TimeEntry) {
+        if (entry.manual) dao.deleteManualEntry(entry.id)
+    }
+
+    /** Earliest start the running [entry] may be moved to: midnight or the previous timer's stop. */
+    suspend fun earliestStartFor(entry: TimeEntry): Long =
+        maxOf(startOfDayMillis(entry.day), dao.latestTimerEnd(entry.day, entry.id) ?: Long.MIN_VALUE)
+
+    /**
+     * Moves the start of the running timer to [newStart]. Keeps the first original start and
+     * stamps when the change was made. Returns an error message, or null on success.
+     */
+    suspend fun changeRunningStart(newStart: Long, now: Long = System.currentTimeMillis()): String? =
+        db.withTransaction {
+            rolloverLocked(now)
+            val running = dao.getRunning().firstOrNull() ?: return@withTransaction "No timer is running"
+            val earliest = earliestStartFor(running)
+            when {
+                newStart > now -> "The start time can't be in the future"
+                newStart < earliest -> "The start time can't be before ${formatTimeOfDay(earliest)}"
+                newStart == running.startMillis -> null
+                else -> {
+                    dao.updateEntry(
+                        running.copy(
+                            startMillis = newStart,
+                            originalStartMillis = running.originalStartMillis ?: running.startMillis,
+                            startEditedAtMillis = now,
+                        )
+                    )
+                    null
+                }
+            }
+        }
+
     suspend fun addProject(number: String, name: String) {
         dao.insertProject(Project(number = number.trim(), name = name.trim()))
     }
@@ -99,6 +149,10 @@ class TimesheetRepository(context: Context, val settings: Settings) {
 
         fun dayOf(millis: Long, zone: ZoneId = ZoneId.systemDefault()): Long =
             Instant.ofEpochMilli(millis).atZone(zone).toLocalDate().toEpochDay()
+
+        fun formatTimeOfDay(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
+            Instant.ofEpochMilli(millis).atZone(zone).toLocalTime()
+                .format(java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT))
 
         fun startOfDayMillis(day: Long, zone: ZoneId = ZoneId.systemDefault()): Long =
             LocalDate.ofEpochDay(day).atStartOfDay(zone).toInstant().toEpochMilli()

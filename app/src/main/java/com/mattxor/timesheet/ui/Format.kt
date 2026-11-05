@@ -1,6 +1,9 @@
 package com.mattxor.timesheet.ui
 
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.FormatStyle
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -36,4 +39,16 @@ fun formatBytes(bytes: Long): String = when {
     bytes >= 1024L * 1024 -> String.format(Locale.US, "%.1f MB", bytes / (1024.0 * 1024))
     bytes >= 1024 -> String.format(Locale.US, "%.0f KB", bytes / 1024.0)
     else -> "$bytes B"
+}
+
+private val timeOfDay = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
+
+/** Local clock time of a timestamp, e.g. "9:52 a.m." or "09:52". */
+fun formatTime(millis: Long): String =
+    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalTime().format(timeOfDay)
+
+/** "1:30" (hours:minutes). */
+fun formatDuration(millis: Long): String {
+    val totalMinutes = millis.coerceAtLeast(0) / 60_000
+    return String.format(Locale.US, "%d:%02d", totalMinutes / 60, totalMinutes % 60)
 }

@@ -1,5 +1,6 @@
 package com.mattxor.timesheet.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -15,8 +16,14 @@ data class Project(
 )
 
 /**
- * One stretch of time on a project. [day] is the local date (LocalDate.toEpochDay()) the
- * stretch belongs to; a running timer has [endMillis] == null.
+ * One line in the time log. [day] is the local date (LocalDate.toEpochDay()) it belongs to.
+ *
+ * Timer entries: [startMillis]..[endMillis] are the start/stop timestamps; a running timer has
+ * [endMillis] == null. If the start was changed by hand, [originalStartMillis] holds the old start
+ * and [startEditedAtMillis] when the change was made.
+ *
+ * Manual entries ([manual] == true): a total amount of time, [durationMillis], added at
+ * [createdAtMillis]. Their start/end are both set to the time they were added.
  */
 @Entity(
     tableName = "time_entries",
@@ -36,7 +43,18 @@ data class TimeEntry(
     val day: Long,
     val startMillis: Long,
     val endMillis: Long? = null,
-)
+    @ColumnInfo(defaultValue = "0") val manual: Boolean = false,
+    val durationMillis: Long? = null,
+    @ColumnInfo(defaultValue = "0") val createdAtMillis: Long = startMillis,
+    val originalStartMillis: Long? = null,
+    val startEditedAtMillis: Long? = null,
+) {
+    fun elapsed(now: Long): Long =
+        if (manual) (durationMillis ?: 0L).coerceAtLeast(0)
+        else ((endMillis ?: now) - startMillis).coerceAtLeast(0)
+
+    val isRunning: Boolean get() = !manual && endMillis == null
+}
 
 data class DayProjectTotal(
     val day: Long,

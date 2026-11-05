@@ -21,24 +21,35 @@ interface TimesheetDao {
     @Update
     suspend fun updateProject(project: Project)
 
-    @Query("SELECT * FROM time_entries WHERE day = :day")
+    @Query("SELECT * FROM time_entries WHERE day = :day ORDER BY startMillis, id")
     fun observeEntriesForDay(day: Long): Flow<List<TimeEntry>>
 
-    @Query("SELECT * FROM time_entries WHERE endMillis IS NULL")
+    @Query("SELECT * FROM time_entries WHERE endMillis IS NULL AND manual = 0")
     suspend fun getRunning(): List<TimeEntry>
 
-    @Query("SELECT * FROM time_entries WHERE endMillis IS NULL AND projectId = :projectId")
+    @Query("SELECT * FROM time_entries WHERE endMillis IS NULL AND manual = 0 AND projectId = :projectId")
     suspend fun getRunningFor(projectId: Long): List<TimeEntry>
 
     @Insert
     suspend fun insertEntry(entry: TimeEntry): Long
+
+    @Update
+    suspend fun updateEntry(entry: TimeEntry)
+
+    @Query("DELETE FROM time_entries WHERE id = :id AND manual = 1")
+    suspend fun deleteManualEntry(id: Long)
+
+    /** Latest stop time of other timer entries on [day]; a changed start can't go before it. */
+    @Query("SELECT MAX(endMillis) FROM time_entries WHERE day = :day AND manual = 0 AND endMillis IS NOT NULL AND id != :excludeId")
+    suspend fun latestTimerEnd(day: Long, excludeId: Long): Long?
 
     @Query("UPDATE time_entries SET endMillis = :endMillis WHERE id = :id")
     suspend fun closeEntry(id: Long, endMillis: Long)
 
     @Query(
         """
-        SELECT day, projectId, SUM(endMillis - startMillis) AS totalMillis
+        SELECT day, projectId,
+            SUM(CASE WHEN manual = 1 THEN COALESCE(durationMillis, 0) ELSE endMillis - startMillis END) AS totalMillis
         FROM time_entries
         WHERE endMillis IS NOT NULL AND day < :today
         GROUP BY day, projectId

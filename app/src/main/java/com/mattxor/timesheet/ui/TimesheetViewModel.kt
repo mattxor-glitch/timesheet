@@ -109,6 +109,31 @@ class TimesheetViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.toggle(project.id) }
     }
 
+    fun addManualTime(project: Project, durationMillis: Long) {
+        viewModelScope.launch {
+            repo.addManualTime(project.id, durationMillis)
+            _messages.send("Added ${formatDuration(durationMillis)} to ${project.number} ${project.name}".trim())
+        }
+    }
+
+    fun deleteManualEntry(entry: TimeEntry) {
+        viewModelScope.launch {
+            repo.deleteManualEntry(entry)
+            _messages.send("Manual entry deleted")
+        }
+    }
+
+    suspend fun earliestStartFor(entry: TimeEntry): Long = repo.earliestStartFor(entry)
+
+    fun changeRunningStart(newStart: Long) {
+        viewModelScope.launch {
+            val error = repo.changeRunningStart(newStart)
+            _messages.send(error ?: "Start time changed to ${TimesheetRepository.formatTimeOfDay(newStart)}")
+        }
+    }
+
+    fun entriesForDay(day: Long) = repo.dao.observeEntriesForDay(day)
+
     fun stopAll() {
         viewModelScope.launch { repo.stopAll() }
     }

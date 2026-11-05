@@ -30,7 +30,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -56,11 +62,16 @@ fun TimersScreen(
     val entries by vm.todayEntries.collectAsStateWithLifecycle()
     val now by vm.now.collectAsStateWithLifecycle()
     val dbSize by vm.dbSizeBytes.collectAsStateWithLifecycle()
+    val projectsById by vm.projectsById.collectAsStateWithLifecycle()
+    var showLog by rememberSaveable { mutableStateOf(false) }
+    var actionsFor by remember { mutableStateOf<Project?>(null) }
+    var addTimeFor by remember { mutableStateOf<Project?>(null) }
+    var changingStart by rememberSaveable { mutableStateOf(false) }
     val warningDismissed by vm.sizeWarningDismissed.collectAsStateWithLifecycle()
 
     val totals: Map<Long, Long> = entries.groupBy { it.projectId }
         .mapValues { (_, list) -> list.sumOf { it.elapsed(now) } }
-    val running: TimeEntry? = entries.firstOrNull { it.endMillis == null }
+    val running: TimeEntry? = entries.firstOrNull { it.isRunning }
     val runningProject = running?.let { r -> projects.firstOrNull { it.id == r.projectId } }
     val dayTotal = entries.sumOf { it.elapsed(now) }
     val haptics = LocalHapticFeedback.current
@@ -112,6 +123,31 @@ fun TimersScreen(
                         }) { Text("Stop") }
                     }
                 }
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    if (running != null) {
+                        TextButton(onClick = { changingStart = true }) { Text("Change start") }
+                    }
+                    TextButton(onClick = { showLog = !showLog }) {
+                        Text(if (showLog) "Hide log" else "Today's log (${entries.size})")
+                    }
+                }
+            }
+        }
+
+        if (showLog) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Card {
+                    EntryLog(
+                        entries = entries,
+                        projects = projectsById,
+                        now = now,
+                        onDeleteManual = vm::deleteManualEntry,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
+                }
             }
         }
 
@@ -119,7 +155,7 @@ fun TimersScreen(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Text(
                     "No projects yet.\nTap \"+ Project\" to add your first project number and name.\n" +
-                        "Long-press a tile later to edit or remove it.",
+                        "Long-press a tile later to add time, change the start time, or edit it.",
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyLarge,
@@ -136,13 +172,68 @@ fun TimersScreen(
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     vm.onTileTapped(project)
                 },
-                onLongPress = { onEditProject(project) },
+                onLongPress = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    actionsFor = project
+                },
             )
         }
     }
-}
 
-private fun TimeEntry.elapsed(now: Long): Long = ((endMillis ?: now) - startMillis).coerceAtLeast(0)
+    actionsFor?.let { project ->
+        ProjectActionsDialog(
+            project = project,
+            isRunning = running?.projectId == project.id,
+            onDismiss = { actionsFor = null },
+            onAddTime = {
+                actionsFor = null
+                addTimeFor = project
+            },
+            onChangeStart = {
+                actionsFor = null
+                changingStart = true
+            },
+            onEdit = {
+                actionsFor = null
+                onEditProject(project)
+            },
+        )
+    }
+
+    addTimeFor?.let { project ->
+        AddTimeDialog(
+            project = project,
+            onDismiss = { addTimeFor = null },
+            onAdd = { duration ->
+                vm.addManualTime(project, duration)
+                addTimeFor = null
+            },
+        )
+    }
+
+    // If the timer stops while the dialog is open, close it rather than reopening later.
+    LaunchedEffect(running == null) { if (running == null) changingStart = false }
+    if (changingStart) {
+        val entry = running
+        if (entry != null) {
+            val earliest by produceState<Long?>(null, entry.id, entry.startMillis) {
+                value = vm.earliestStartFor(entry)
+            }
+            earliest?.let { e ->
+                ChangeStartDialog(
+                    running = entry,
+                    earliestStart = e,
+                    now = now,
+                    onDismiss = { changingStart = false },
+                    onChange = { newStart ->
+                        vm.changeRunningStart(newStart)
+                        changingStart = false
+                    },
+                )
+            }
+        }
+    }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
