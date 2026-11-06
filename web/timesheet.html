@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1E5AA8">
+<title>Timesheet</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 108 108'%3E%3Crect width='108' height='108' rx='24' fill='%231E5AA8'/%3E%3Cpath fill='%23fff' d='M47 31h14v5H47zM52 35h4v7h-4z'/%3E%3Ccircle cx='54' cy='59' r='17' fill='none' stroke='%23fff' stroke-width='5'/%3E%3Cpath d='M54 59V48M54 59l7 4' stroke='%23fff' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --primary: #1E5AA8; --on-primary: #fff;
+    --primary-soft: #D5E3FF; --on-primary-soft: #001B3E;
+    --bg: #F7F8FC; --surface: #FFFFFF; --surface-2: #EEF1F8; --text: #1A1C20; --muted: #5B6170;
+    --border: #D9DDE7; --error: #B3261E; --error-soft: #F9DEDC; --on-error-soft: #410E0B;
+    --tag: #E8DEF8; --on-tag: #1D192B;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    --radius: 14px;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --primary: #A7C8FF; --on-primary: #00305F;
+      --primary-soft: #00458F; --on-primary-soft: #D5E3FF;
+      --bg: #111318; --surface: #1C1F26; --surface-2: #262A33; --text: #E3E5EC; --muted: #A4AAB8;
+      --border: #363B47; --error: #F2B8B5; --error-soft: #601410; --on-error-soft: #F9DEDC;
+      --tag: #4A4458; --on-tag: #E8DEF8;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+  button, input, select { font: inherit; color: inherit; }
+  .mono { font-family: ui-monospace, "SF Mono", "Roboto Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+
+  header.topbar { position: sticky; top: 0; z-index: 5; background: var(--bg);
+    padding: calc(12px + env(safe-area-inset-top)) 16px 10px; }
+  header h1 { margin: 0 auto; max-width: 960px; font-size: 22px; font-weight: 600; }
+  main { max-width: 960px; margin: 0 auto; padding: 4px 12px 96px; }
+
+  nav.tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; justify-content: center;
+    background: var(--surface-2); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); }
+  nav.tabs button { flex: 1; max-width: 220px; background: none; border: 0; padding: 10px 4px 12px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 13px; color: var(--muted); }
+  nav.tabs button svg { width: 24px; height: 24px; padding: 2px 16px; box-sizing: content-box; border-radius: 16px; }
+  nav.tabs button.active { color: var(--text); font-weight: 600; }
+  nav.tabs button.active svg { background: var(--primary-soft); color: var(--on-primary-soft); }
+
+  .card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow);
+    border: 1px solid var(--border); padding: 16px; margin-bottom: 12px; }
+  .card.active { background: var(--primary-soft); color: var(--on-primary-soft); border-color: transparent; }
+  .card.warn { background: var(--error-soft); color: var(--on-error-soft); border-color: transparent; }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .grow { flex: 1; min-width: 0; }
+  .ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .right { display: flex; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+
+  .btn { border: 0; border-radius: 999px; padding: 9px 18px; cursor: pointer; font-weight: 600;
+    background: var(--primary); color: var(--on-primary); }
+  .btn.text { background: none; color: var(--primary); padding: 8px 12px; }
+  .card.active .btn.text { color: inherit; }
+  .card.warn .btn.text { color: inherit; }
+  .btn.outline { background: none; color: var(--primary); border: 1px solid var(--border); }
+  .btn.danger { color: var(--error); }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn:focus-visible, .tile:focus-visible, nav.tabs button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+  .day-total { font-size: 34px; font-weight: 500; line-height: 1.15; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)); gap: 12px; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+    padding: 12px 10px 14px 14px; min-height: 128px; cursor: pointer; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; display: flex; flex-direction: column; transition: transform .08s, background .15s; }
+  .tile:active { transform: scale(.98); }
+  .tile.running { background: var(--primary); color: var(--on-primary); border-color: transparent;
+    box-shadow: 0 4px 14px rgba(30,90,168,.35); }
+  .tile .num { font-size: 20px; font-weight: 700; }
+  .tile .name { font-size: 14px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tile .time { margin-top: auto; padding-top: 10px; font-size: 17px; font-weight: 500; }
+  .tile .more { background: none; border: 0; cursor: pointer; padding: 2px 6px; border-radius: 8px; font-size: 20px;
+    line-height: 1; color: inherit; opacity: .75; }
+  .tile .more:hover { background: rgba(127,127,127,.18); }
+  .play { display: inline-block; width: 0; height: 0; border-left: 10px solid currentColor;
+    border-top: 6px solid transparent; border-bottom: 6px solid transparent; margin-right: 4px; }
+
+  .fab { position: fixed; right: max(16px, calc(50vw - 464px)); bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 9;
+    border: 0; border-radius: 16px; padding: 16px 20px; font-weight: 600; cursor: pointer;
+    background: var(--primary-soft); color: var(--on-primary-soft); box-shadow: 0 3px 10px rgba(0,0,0,.2); }
+
+  .empty { text-align: center; padding: 32px 16px; color: var(--muted); }
+
+  .log-entry { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+  .log-entry:first-child { border-top: 0; }
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 1px 5px;
+    border-radius: 4px; background: var(--tag); color: var(--on-tag); margin-left: 6px; vertical-align: 1px; }
+  .icon-btn { background: none; border: 0; cursor: pointer; padding: 6px; border-radius: 50%; color: var(--muted); }
+  .icon-btn:hover { background: rgba(127,127,127,.15); }
+
+  .hist-head { cursor: pointer; }
+  .proj-row { display: flex; gap: 8px; padding: 2px 0; font-size: 14px; }
+  hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
+  .section-title { color: var(--primary); font-size: 14px; font-weight: 600; margin: 16px 4px 6px; }
+  .setting { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-top: 1px solid var(--border); }
+  .setting:first-child { border-top: 0; padding-top: 0; }
+  select, input[type=text], input[type=number], input[type=date], input[type=time] {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 10px; min-width: 0; }
+  .switch { position: relative; width: 52px; height: 32px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; border-radius: 16px; background: var(--surface-2);
+    border: 2px solid var(--muted); cursor: pointer; transition: .15s; }
+  .switch span::after { content: ""; position: absolute; width: 16px; height: 16px; left: 6px; top: 6px;
+    border-radius: 50%; background: var(--muted); transition: .15s; }
+  .switch input:checked + span { background: var(--primary); border-color: var(--primary); }
+  .switch input:checked + span::after { left: 26px; top: 3px; width: 22px; height: 22px; background: var(--on-primary); }
+  .switch input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+  dialog { border: 0; border-radius: 24px; padding: 22px; width: min(420px, calc(100vw - 32px));
+    background: var(--surface); color: var(--text); box-shadow: 0 10px 40px rgba(0,0,0,.3); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog h2 { margin: 0 0 12px; font-size: 20px; font-weight: 600; }
+  dialog label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+  dialog input { width: 100%; }
+  dialog .actions { display: flex; justify-content: flex-end; gap: 4px; margin-top: 18px; flex-wrap: wrap; }
+  dialog .stack { display: grid; gap: 8px; }
+  dialog .stack .btn { width: 100%; padding: 12px; }
+  .err { color: var(--error); font-size: 14px; margin-top: 8px; min-height: 1em; }
+
+  #toast { position: fixed; left: 50%; bottom: calc(90px + env(safe-area-inset-bottom)); transform: translate(-50%, 20px);
+    background: #2F3036; color: #F1F0F4; padding: 12px 18px; border-radius: 8px; z-index: 50; opacity: 0;
+    pointer-events: none; transition: .2s; max-width: calc(100vw - 32px); }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+</style>
+</head>
+<body>
+<header class="topbar"><h1 id="title">Timesheet</h1></header>
+<main id="main" aria-live="polite"></main>
+<button class="fab" id="fab" type="button" data-action="add-project">+ Project</button>
+<nav class="tabs" aria-label="Sections">
+  <button type="button" data-tab="timers"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Timers</button>
+  <button type="button" data-tab="history"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 16H5V10h14v10zM9 14H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2zm-8 4H7v-2h2v2zm4 0h-2v-2h2v2zm4 0h-2v-2h2v2z"/></svg>History</button>
+  <button type="button" data-tab="settings"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M19.14 12.94a7.5 7.5 0 0 0 0-1.88l2.03-1.58a.5.5 0 0 0 .12-.64l-1.92-3.32a.5.5 0 0 0-.6-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.5.5 0 0 0 13.9 2h-3.84a.5.5 0 0 0-.49.42l-.36 2.54c-.59.24-1.13.56-1.62.94l-2.39-.96a.5.5 0 0 0-.6.22L2.68 8.48a.5.5 0 0 0 .12.64l2.03 1.58a7.5 7.5 0 0 0 0 1.88l-2.03 1.58a.5.5 0 0 0-.12.64l1.92 3.32c.12.22.38.3.6.22l2.39-.96c.49.38 1.03.7 1.62.94l.36 2.54c.05.24.25.42.49.42h3.84c.24 0 .44-.18.49-.42l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.48 0 .6-.22l1.92-3.32a.5.5 0 0 0-.12-.64l-2.03-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/></svg>Settings</button>
+</nav>
+<div id="toast" role="status"></div>
+<dialog id="dlg"></dialog>
+
+<script>
+'use strict';
+/* =========================================================================
+   Timesheet — single-file web version.
+   Data is kept in this browser (IndexedDB, or localStorage as a fallback).
+   ========================================================================= */
+
+const DAY = 86400000;
+const SIZE_WARN = 50 * 1024 * 1024;
+const RETENTION = [
+  [7, '1 week'], [31, '1 month'], [92, '3 months'], [183, '6 months'],
+  [366, '1 year'], [731, '2 years'], [1827, '5 years'], [null, 'Never delete'],
+];
+
+/* ---------- state ---------- */
+const S = { projects: [], entries: [], settings: { retention: null, carry: false } };
+let nextId = 1;
+let tab = 'timers';
+let today = dayOf(Date.now());
+let showLog = false;
+let warnDismissed = false;
+let dataSize = 0;
+const expanded = new Set();
+
+/* ---------- date / format helpers ---------- */
+function pad(n) { return String(n).padStart(2, '0'); }
+/** Local calendar day as a day number (same idea as LocalDate.toEpochDay). */
+function dayOf(ms) { const d = new Date(ms); return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY); }
+function ymd(day) { const d = new Date(day * DAY); return [d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()]; }
+function localDate(day) { const [y, m, d] = ymd(day); return new Date(y, m, d); }
+function startOfDay(day) { return localDate(day).getTime(); }
+function fmtMdy(day) { const [y, m, d] = ymd(day); return `${pad(m + 1)}/${pad(d)}/${y}`; }
+function fmtDayLong(day) { return localDate(day).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }); }
+function fmtDayShort(day) { return localDate(day).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' }); }
+function fmtTime(ms) { return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }); }
+function fmtClock(ms) {
+  const s = Math.floor(Math.max(0, ms) / 1000);
+  return `${Math.floor(s / 3600)}:${pad(Math.floor(s % 3600 / 60))}:${pad(s % 60)}`;
+}
+function fmtDur(ms) { const m = Math.floor(Math.max(0, ms) / 60000); return `${Math.floor(m / 60)}:${pad(m % 60)}`; }
+function fmtHours(ms) { return `${fmtDur(ms)} · ${(Math.max(0, ms) / 3600000).toFixed(2)} h`; }
+function fmtBytes(b) {
+  if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+  if (b >= 1024) return Math.round(b / 1024) + ' KB';
+  return b + ' B';
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function projLabel(p) { return p ? `${p.number} ${p.name}`.trim() : 'Deleted project'; }
+
+/* ---------- entries ---------- */
+function elapsed(e, now) { return e.manual ? Math.max(0, e.duration || 0) : Math.max(0, (e.end ?? now) - e.start); }
+function isRunning(e) { return !e.manual && e.end == null; }
+function runningEntries() { return S.entries.filter(isRunning); }
+function projectById(id) { return S.projects.find(p => p.id === id); }
+function entriesForDay(day) {
+  return S.entries.filter(e => e.day === day)
+    .sort((a, b) => (a.manual ? a.createdAt : a.start) - (b.manual ? b.createdAt : b.start) || a.id - b.id);
+}
+function newEntry(projectId, start, extra = {}) {
+  return { id: nextId++, projectId, day: dayOf(start), start, end: null, manual: false, duration: null,
+    createdAt: start, origStart: null, editedAt: null, ...extra };
+}
+
+/* ---------- storage ---------- */
+const storage = {
+  kind: 'memory', idb: null,
+
+  async init() {
+    try { this.idb = await openIdb(); this.kind = 'idb'; return; } catch (e) { /* fall through */ }
+    try { localStorage.setItem('__ts', '1'); localStorage.removeItem('__ts'); this.kind = 'ls'; } catch (e) { this.kind = 'memory'; }
+  },
+
+  async load() {
+    if (this.kind === 'idb') {
+      const [projects, entries, meta] = await Promise.all([idbAll('projects'), idbAll('entries'), idbAll('meta')]);
+      const settings = (meta.find(m => m.key === 'settings') || {}).value;
+      return { projects, entries, settings };
+    }
+    if (this.kind === 'ls') {
+      const raw = localStorage.getItem('timesheet-data');
+      return raw ? JSON.parse(raw) : {};
+    }
+    return {};
+  },
+
+  /** ch: { projects: [], entries: [], delEntries: [ids], settings: bool, replaceAll: bool } */
+  persist(ch) {
+    if (this.kind === 'idb') {
+      return new Promise((resolve, reject) => {
+        const t = this.idb.transaction(['projects', 'entries', 'meta'], 'readwrite');
+        const ps = t.objectStore('projects'), es = t.objectStore('entries'), ms = t.objectStore('meta');
+        if (ch.replaceAll) {
+          ps.clear(); es.clear();
+          S.projects.forEach(p => ps.put(p)); S.entries.forEach(e => es.put(e));
+        }
+        (ch.projects || []).forEach(p => ps.put(p));
+        (ch.entries || []).forEach(e => { if (S.entries.includes(e)) es.put(e); });
+        (ch.delEntries || []).forEach(id => es.delete(id));
+        if (ch.settings || ch.replaceAll) ms.put({ key: 'settings', value: S.settings });
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+        t.onabort = () => reject(t.error || new Error('Save aborted'));
+      });
+    }
+    if (this.kind === 'ls') {
+      localStorage.setItem('timesheet-data', JSON.stringify({ projects: S.projects, entries: S.entries, settings: S.settings }));
+    }
+    return Promise.resolve();
+  },
+};
+
+function openIdb() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window) || !window.indexedDB) return reject(new Error('No IndexedDB'));
+    let req;
+    try { req = indexedDB.open('timesheet', 1); } catch (e) { return reject(e); }
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      db.createObjectStore('projects', { keyPath: 'id' });
+      db.createObjectStore('entries', { keyPath: 'id' }).createIndex('day', 'day');
+      db.createObjectStore('meta', { keyPath: 'key' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => reject(new Error('blocked'));
+  });
+}
+function idbAll(store) {
+  return new Promise((resolve, reject) => {
+    const q = storage.idb.transaction(store).objectStore(store).getAll();
+    q.onsuccess = () => resolve(q.result);
+    q.onerror = () => reject(q.error);
+  });
+}
+
+/* Keep several open tabs in step. */
+const channel = ('BroadcastChannel' in window) ? new BroadcastChannel('timesheet') : null;
+if (channel) channel.onmessage = () => reload();
+window.addEventListener('storage', e => { if (e.key === 'timesheet-data') reload(); });
+
+function newChange() { return { projects: [], entries: [], delEntries: [], settings: false }; }
+
+async function commit(ch) {
+  try {
+    await storage.persist(ch);
+    if (channel) channel.postMessage('changed');
+  } catch (e) {
+    toast('Could not save: ' + (e && e.message ? e.message : e));
+  }
+  if (ch.delEntries.length || ch.replaceAll) refreshSize();
+  render();
+}
+
+async function reload() {
+  const data = await storage.load();
+  S.projects = Array.isArray(data.projects) ? data.projects : [];
+  S.entries = Array.isArray(data.entries) ? data.entries : [];
+  S.settings = Object.assign({ retention: null, carry: false }, data.settings || {});
+  nextId = Math.max(0, ...S.projects.map(p => p.id), ...S.entries.map(e => e.id)) + 1;
+  refreshSize();
+  render();
+}
+
+function refreshSize() {
+  dataSize = new Blob([JSON.stringify({ projects: S.projects, entries: S.entries, settings: S.settings })]).size;
+  if (dataSize <= SIZE_WARN) warnDismissed = false;
+}
+
+/* ---------- operations (same rules as the Android app) ---------- */
+
+/** Daily reset: a timer running from an earlier day is closed at that day's midnight,
+    and optionally carried into the following day(s) starting from zero. */
+function rolloverInto(now, ch) {
+  const t = dayOf(now);
+  for (const e of runningEntries()) {
+    let day = e.day, cur = e;
+    while (day < t) {
+      const midnight = startOfDay(day + 1);
+      cur.end = midnight; ch.entries.push(cur);
+      day++;
+      if (!S.settings.carry) break;
+      cur = newEntry(e.projectId, midnight);
+      S.entries.push(cur); ch.entries.push(cur);
+    }
+  }
+}
+
+function removeEntries(pred, ch) {
+  const gone = S.entries.filter(pred);
+  if (!gone.length) return 0;
+  const ids = new Set(gone.map(e => e.id));
+  S.entries = S.entries.filter(e => !ids.has(e.id));
+  ch.delEntries.push(...ids);
+  return gone.length;
+}
+
+function pruneInto(now, ch) {
+  const days = S.settings.retention;
+  if (days == null) return 0;
+  const cutoff = dayOf(now) - days;
+  return removeEntries(e => e.day < cutoff && e.end != null, ch);
+}
+
+async function toggle(projectId) {
+  const now = Date.now(), ch = newChange();
+  rolloverInto(now, ch);
+  const run = runningEntries();
+  run.forEach(e => { e.end = now; ch.entries.push(e); });
+  if (!run.some(e => e.projectId === projectId)) {
+    const e = newEntry(projectId, now);
+    S.entries.push(e); ch.entries.push(e);
+  }
+  await commit(ch);
+}
+
+async function stopAll() {
+  const now = Date.now(), ch = newChange();
+  rolloverInto(now, ch);
+  runningEntries().forEach(e => { e.end = now; ch.entries.push(e); });
+  await commit(ch);
+}
+
+async function addManual(projectId, duration) {
+  const now = Date.now(), ch = newChange();
+  const e = newEntry(projectId, now, { end: now, manual: true, duration, createdAt: now });
+  S.entries.push(e); ch.entries.push(e);
+  await commit(ch);
+  toast(`Added ${fmtDur(duration)} to ${projLabel(projectById(projectId))}`);
+}
+
+async function deleteManual(id) {
+  const ch = newChange();
+  removeEntries(e => e.id === id && e.manual, ch);
+  await commit(ch);
+  toast('Manual entry deleted');
+}
+
+function earliestStartFor(entry) {
+  let earliest = startOfDay(entry.day);
+  for (const e of S.entries) {
+    if (e.day === entry.day && !e.manual && e.end != null && e.id !== entry.id) earliest = Math.max(earliest, e.end);
+  }
+  return earliest;
+}
+
+async function changeStart(newStart) {
+  const now = Date.now(), ch = newChange();
+  rolloverInto(now, ch);
+  const run = runningEntries()[0];
+  if (!run) { await commit(ch); return toast('No timer is running'); }
+  const earliest = earliestStartFor(run);
+  let msg = `Start time changed to ${fmtTime(newStart)}`;
+  if (newStart > now) msg = "The start time can't be in the future";
+  else if (newStart < earliest) msg = `The start time can't be before ${fmtTime(earliest)}`;
+  else if (newStart !== run.start) {
+    if (run.origStart == null) run.origStart = run.start;
+    run.start = newStart;
+    run.editedAt = now;
+    ch.entries.push(run);
+  }
+  await commit(ch);
+  toast(msg);
+}
+
+async function saveProject(existing, number, name) {
+  const ch = newChange();
+  if (existing) {
+    existing.number = number.trim(); existing.name = name.trim();
+    ch.projects.push(existing);
+  } else {
+    const p = { id: nextId++, number: number.trim(), name: name.trim(), archived: false };
+    S.projects.push(p); ch.projects.push(p);
+  }
+  await commit(ch);
+}
+
+/** Hides the tile but keeps the project so history still shows its name. */
+async function removeProject(p) {
+  const now = Date.now(), ch = newChange();
+  runningEntries().filter(e => e.projectId === p.id).forEach(e => { e.end = now; ch.entries.push(e); });
+  p.archived = true; ch.projects.push(p);
+  await commit(ch);
+}
+
+async function setRetention(days) {
+  const ch = newChange();
+  S.settings.retention = days; ch.settings = true;
+  const n = pruneInto(Date.now(), ch);
+  await commit(ch);
+  if (n) toast(`Removed ${n} old time entries`);
+}
+
+async function setCarry(v) {
+  const ch = newChange();
+  S.settings.carry = v; ch.settings = true;
+  await commit(ch);
+}
+
+async function clearBefore(day) {
+  const ch = newChange();
+  const n = removeEntries(e => e.day < day && e.end != null, ch);
+  await commit(ch);
+  toast(n ? `Cleared ${n} time entries before ${fmtMdy(day)}` : `Nothing to clear before ${fmtMdy(day)}`);
+}
+
+/* ---------- ticking & daily reset ---------- */
+async function tick() {
+  const now = Date.now();
+  const d = dayOf(now);
+  if (d !== today) {
+    const ch = newChange();
+    rolloverInto(now, ch);
+    pruneInto(now, ch);
+    today = d;
+    await commit(ch);
+    return;
+  }
+  updateLive(now);
+}
+function scheduleTick() {
+  setTimeout(async () => { await tick(); scheduleTick(); }, 1000 - (Date.now() % 1000) + 5);
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+
+/** Updates only the running numbers, so the page doesn't redraw every second. */
+function updateLive(now = Date.now()) {
+  const todays = S.entries.filter(e => e.day === today);
+  const perProject = {};
+  let total = 0;
+  for (const e of todays) {
+    const t = elapsed(e, now);
+    perProject[e.projectId] = (perProject[e.projectId] || 0) + t;
+    total += t;
+  }
+  document.querySelectorAll('[data-live]').forEach(el => {
+    const k = el.dataset.live;
+    let v;
+    if (k === 'total') v = total;
+    else if (k.startsWith('p:')) v = perProject[+k.slice(2)] || 0;
+    else if (k.startsWith('e:')) { const e = S.entries.find(x => x.id === +k.slice(2)); v = e ? elapsed(e, now) : 0; }
+    const text = fmtClock(v);
+    if (el.textContent !== text) el.textContent = text;
+  });
+}
+
+/* ---------- rendering ---------- */
+const main = document.getElementById('main');
+const fab = document.getElementById('fab');
+
+function render() {
+  document.querySelectorAll('nav.tabs button').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
+    b.setAttribute('aria-current', b.dataset.tab === tab ? 'page' : 'false');
+  });
+  fab.hidden = tab !== 'timers';
+  document.getElementById('title').textContent =
+    tab === 'timers' ? fmtDayShort(today) : tab === 'history' ? 'History' : 'Settings';
+  main.innerHTML = tab === 'timers' ? renderTimers() : tab === 'history' ? renderHistory() : renderSettings();
+  updateLive();
+}
+
+function renderTimers() {
+  const projects = S.projects.filter(p => !p.archived)
+    .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true, sensitivity: 'base' })
+      || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  const todays = entriesForDay(today);
+  const run = todays.find(isRunning);
+  const runP = run && projectById(run.projectId);
+  let h = '';
+
+  if (dataSize > SIZE_WARN && !warnDismissed) {
+    h += `<div class="card warn">
+      <div class="row"><strong class="grow">⚠ History is large</strong></div>
+      <div class="small" style="margin-top:4px">It's using ${fmtBytes(dataSize)}, over the 50 MB limit. You can clear history before a date in Settings.</div>
+      <div class="right"><button class="btn text" data-action="dismiss-warn">Dismiss</button>
+      <button class="btn text" data-action="go-settings">Clear history</button></div></div>`;
+  }
+
+  h += `<div class="card ${run ? 'active' : ''}">
+    <div class="row">
+      <div class="grow">
+        <div class="small" style="font-weight:600">Today</div>
+        <div class="day-total mono" data-live="total">0:00:00</div>
+        <div class="ellipsis small">${run ? 'Running: ' + esc(projLabel(runP)) : 'No timer running'}</div>
+      </div>
+      ${run ? '<button class="btn" data-action="stop">Stop</button>' : ''}
+    </div>
+    <div class="right" style="margin-top:6px">
+      ${run ? '<button class="btn text" data-action="change-start">Change start</button>' : ''}
+      <button class="btn text" data-action="toggle-log">${showLog ? 'Hide log' : `Today's log (${todays.length})`}</button>
+    </div></div>`;
+
+  if (showLog) h += `<div class="card">${renderLog(todays)}</div>`;
+
+  if (!projects.length) {
+    h += `<div class="empty">No projects yet.<br>Tap <strong>+ Project</strong> to add your first project number and name.<br>
+      Use a tile's ⋯ button (or long-press / right-click it) to add time, change the start time, or edit it.</div>`;
+  } else {
+    h += '<div class="grid">' + projects.map(p => {
+      const r = run && run.projectId === p.id;
+      return `<div class="tile ${r ? 'running' : ''}" role="button" tabindex="0" data-action="toggle" data-id="${p.id}"
+          aria-pressed="${r}" aria-label="${esc(projLabel(p))}${r ? ', running' : ''}">
+        <div class="row" style="gap:4px">
+          <span class="num grow ellipsis">${esc(p.number)}</span>
+          ${r ? '<span class="play" aria-hidden="true"></span>' : ''}
+          <button class="more" type="button" data-action="actions" data-id="${p.id}" aria-label="More for ${esc(projLabel(p))}">⋯</button>
+        </div>
+        <div class="name">${esc(p.name)}</div>
+        <div class="time mono" data-live="p:${p.id}">0:00:00</div>
+      </div>`;
+    }).join('') + '</div>';
+  }
+  return h;
+}
+
+function renderLog(entries) {
+  if (!entries.length) return '<div class="muted small">No entries</div>';
+  return entries.map(e => {
+    const p = projectById(e.projectId);
+    let head, note = '';
+    if (e.manual) {
+      head = '+' + fmtDur(e.duration || 0);
+      note = `Added at ${fmtTime(e.createdAt)}`;
+    } else {
+      head = `${fmtTime(e.start)} – ${e.end == null ? 'running' : fmtTime(e.end)}`;
+      if (e.editedAt != null && e.origStart != null) note = `Start changed from ${fmtTime(e.origStart)} at ${fmtTime(e.editedAt)}`;
+    }
+    const tag = (e.manual || e.editedAt != null) ? '<span class="tag">MANUAL</span>' : '';
+    const right = e.manual
+      ? `<button class="icon-btn" data-action="del-manual" data-id="${e.id}" aria-label="Delete manual entry" title="Delete manual entry">
+           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>`
+      : `<span class="mono small" data-live="e:${e.id}">0:00:00</span>`;
+    return `<div class="log-entry"><div class="grow">
+        <div><span class="mono" style="font-weight:600">${head}</span>${tag}</div>
+        <div class="small ellipsis">${esc(projLabel(p))}</div>
+        ${note ? `<div class="small muted">${note}</div>` : ''}
+      </div>${right}</div>`;
+  }).join('');
+}
+
+function renderHistory() {
+  const byDay = new Map();
+  for (const e of S.entries) {
+    if (e.day >= today || (!e.manual && e.end == null)) continue;
+    if (!byDay.has(e.day)) byDay.set(e.day, new Map());
+    const m = byDay.get(e.day);
+    m.set(e.projectId, (m.get(e.projectId) || 0) + elapsed(e, e.end));
+  }
+  const days = [...byDay.keys()].sort((a, b) => b - a);
+  if (!days.length) return '<div class="empty">No history yet.<br>Each day\'s times are saved here after midnight.</div>';
+  return days.map(day => {
+    const totals = [...byDay.get(day)].sort((a, b) => b[1] - a[1]);
+    const sum = totals.reduce((s, [, t]) => s + t, 0);
+    const open = expanded.has(day);
+    return `<div class="card">
+      <div class="hist-head" role="button" tabindex="0" data-action="expand" data-day="${day}" aria-expanded="${open}">
+        <div class="row"><strong class="grow">${fmtDayLong(day)}</strong><strong class="mono">${fmtHours(sum)}</strong></div>
+        <hr>
+        ${totals.map(([pid, t]) => {
+          const p = projectById(pid);
+          return `<div class="proj-row"><strong>${esc(p ? p.number : '?')}</strong>
+            <span class="grow ellipsis">${esc(p ? p.name : 'Deleted project')}</span><span class="mono">${fmtHours(t)}</span></div>`;
+        }).join('')}
+        ${open ? '' : '<div class="small muted" style="margin-top:6px">Tap to show start/stop times</div>'}
+      </div>
+      ${open ? `<hr><div class="small" style="color:var(--primary);font-weight:600;margin-bottom:4px">Time log</div>${renderLog(entriesForDay(day))}` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderSettings() {
+  const oldest = S.entries.length ? Math.min(...S.entries.map(e => e.day)) : null;
+  const over = dataSize > SIZE_WARN;
+  const where = storage.kind === 'idb' ? 'Saved in this browser (IndexedDB)'
+    : storage.kind === 'ls' ? 'Saved in this browser (local storage)'
+    : 'This browser is not allowing storage — data will be lost when the page closes';
+  const [ty, tm, td] = ymd(today);
+  return `
+  <div class="section-title">History</div>
+  <div class="card">
+    <div class="setting"><div class="grow">Keep history for</div>
+      <select id="retention" aria-label="Keep history for">
+        ${RETENTION.map(([d, l]) => `<option value="${d ?? ''}" ${S.settings.retention === d ? 'selected' : ''}>${l}</option>`).join('')}
+      </select></div>
+    <div class="setting"><div class="grow">Keep timer running past midnight
+        <div class="small muted">${S.settings.carry ? 'A running timer continues on the new day, starting from zero' : 'A running timer is stopped at midnight'}</div></div>
+      <label class="switch"><input type="checkbox" id="carry" ${S.settings.carry ? 'checked' : ''} aria-label="Keep timer running past midnight"><span></span></label></div>
+  </div>
+
+  <div class="section-title">Storage</div>
+  <div class="card">
+    <div class="setting"><div class="grow">Data size
+        <div class="small" style="color:${over ? 'var(--error)' : 'var(--muted)'}">${fmtBytes(dataSize)}${over ? ' — over the 50 MB limit' : ' (warning at 50 MB)'}</div></div></div>
+    <div class="setting"><div class="grow">Oldest record<div class="small muted">${oldest != null ? fmtMdy(oldest) : 'No records yet'}</div></div></div>
+    <div class="setting"><div class="grow">Clear history before
+        <div class="small muted">Entries on the chosen date and later are kept</div></div>
+      <input type="date" id="clear-date" max="${ty}-${pad(tm + 1)}-${pad(td)}" aria-label="Clear history before date">
+      <button class="btn outline" data-action="clear-before">Clear…</button></div>
+    <div class="small muted" style="margin-top:8px">${where}</div>
+  </div>
+
+  <div class="section-title">Backup</div>
+  <div class="card">
+    <div class="small muted" style="margin-bottom:10px">Your data lives only in this browser. Clearing browser data deletes it, so save a backup now and then.</div>
+    <div class="row" style="flex-wrap:wrap">
+      <button class="btn outline" data-action="export">Save backup</button>
+      <button class="btn outline" data-action="import">Restore backup…</button>
+      <input type="file" id="import-file" accept=".json,application/json" hidden>
+    </div>
+  </div>`;
+}
+
+/* ---------- dialogs ---------- */
+const dlg = document.getElementById('dlg');
+
+function openDialog(html, mount) {
+  if (dlg.open) dlg.close();
+  dlg.innerHTML = html;
+  dlg.showModal();
+  if (mount) mount(dlg);
+  const first = dlg.querySelector('input, select');
+  if (first) first.focus();
+}
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });   // click on backdrop
+
+function confirmDialog(title, text, okLabel = 'OK', danger = false) {
+  return new Promise(resolve => {
+    openDialog(`<h2>${esc(title)}</h2><div>${esc(text)}</div>
+      <div class="actions"><button class="btn text" data-r="0">Cancel</button>
+      <button class="btn text ${danger ? 'danger' : ''}" data-r="1">${esc(okLabel)}</button></div>`, d => {
+      let result = false;
+      d.querySelectorAll('[data-r]').forEach(b => b.onclick = () => { result = b.dataset.r === '1'; d.close(); });
+      d.addEventListener('close', () => resolve(result), { once: true });
+    });
+  });
+}
+
+function projectDialog(p) {
+  openDialog(`<h2>${p ? 'Edit project' : 'Add project'}</h2>
+    <form method="dialog" id="pf">
+      <label for="pnum">Project number</label><input id="pnum" type="text" autocomplete="off" value="${esc(p ? p.number : '')}">
+      <label for="pname">Project name</label><input id="pname" type="text" autocomplete="off" value="${esc(p ? p.name : '')}">
+      <div class="actions">
+        ${p ? '<button type="button" class="btn text danger" id="premove">Remove</button>' : ''}
+        <button type="button" class="btn text" id="pcancel">Cancel</button>
+        <button type="submit" class="btn text" id="psave">Save</button>
+      </div></form>`, d => {
+    const num = d.querySelector('#pnum'), name = d.querySelector('#pname'), save = d.querySelector('#psave');
+    const check = () => { save.disabled = !num.value.trim() && !name.value.trim(); };
+    num.oninput = name.oninput = check; check();
+    d.querySelector('#pcancel').onclick = () => d.close();
+    d.querySelector('#pf').onsubmit = ev => {
+      ev.preventDefault();
+      if (save.disabled) return;
+      d.close();
+      saveProject(p, num.value, name.value);
+    };
+    const rm = d.querySelector('#premove');
+    if (rm) rm.onclick = async () => {
+      const ok = await confirmDialog('Remove project?', `${projLabel(p)} will be removed from the tiles. Its history is kept.`, 'Remove', true);
+      if (ok) removeProject(p);
+    };
+  });
+}
+
+function actionsDialog(p) {
+  const r = runningEntries().some(e => e.projectId === p.id);
+  openDialog(`<h2>${esc(projLabel(p))}</h2><div class="stack">
+      <button class="btn outline" id="a-add">Add time for today</button>
+      ${r ? '<button class="btn outline" id="a-start">Change start time</button>' : ''}
+      <button class="btn outline" id="a-edit">Edit or remove project</button></div>
+    <div class="actions"><button class="btn text" id="a-close">Close</button></div>`, d => {
+    d.querySelector('#a-add').onclick = () => addTimeDialog(p);
+    const s = d.querySelector('#a-start'); if (s) s.onclick = () => changeStartDialog();
+    d.querySelector('#a-edit').onclick = () => projectDialog(p);
+    d.querySelector('#a-close').onclick = () => d.close();
+  });
+}
+
+function addTimeDialog(p) {
+  openDialog(`<h2>Add time</h2>
+    <div class="small">Adds time to <strong>${esc(projLabel(p))}</strong> for today. It's logged as a manual entry stamped with the current time.</div>
+    <form method="dialog" id="tf">
+      <div class="row" style="align-items:flex-end">
+        <div class="grow"><label for="th">Hours</label><input id="th" type="number" inputmode="numeric" min="0" max="24" step="1" placeholder="0"></div>
+        <div class="grow"><label for="tm">Minutes</label><input id="tm" type="number" inputmode="numeric" min="0" max="59" step="1" placeholder="0"></div>
+      </div>
+      <div class="err" id="terr"></div>
+      <div class="actions"><button type="button" class="btn text" id="tcancel">Cancel</button>
+        <button type="submit" class="btn text" id="tadd" disabled>Add</button></div></form>`, d => {
+    const hEl = d.querySelector('#th'), mEl = d.querySelector('#tm'), add = d.querySelector('#tadd'), err = d.querySelector('#terr');
+    let total = 0;
+    const check = () => {
+      const hs = hEl.value.trim(), ms = mEl.value.trim();
+      const h = hs === '' ? 0 : Number(hs), m = ms === '' ? 0 : Number(ms);
+      let msg = '';
+      if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || m < 0) msg = 'Enter whole hours and minutes';
+      else if (m > 59) msg = 'Minutes must be 0–59';
+      total = (h * 60 + m) * 60000;
+      if (!msg && total > 24 * 3600000) msg = 'Up to 24 hours at a time';
+      err.textContent = msg;
+      add.disabled = !!msg || total <= 0;
+    };
+    hEl.oninput = mEl.oninput = check;
+    d.querySelector('#tcancel').onclick = () => d.close();
+    d.querySelector('#tf').onsubmit = ev => {
+      ev.preventDefault();
+      check();
+      if (add.disabled) return;
+      d.close();
+      addManual(p.id, total);
+    };
+  });
+}
+
+function changeStartDialog() {
+  const run = runningEntries()[0];
+  if (!run) return toast('No timer is running');
+  const cur = new Date(run.start);
+  const curVal = `${pad(cur.getHours())}:${pad(cur.getMinutes())}`;
+  const earliest = earliestStartFor(run);
+  openDialog(`<h2>Change start time</h2>
+    <div class="small">Currently started at ${fmtTime(run.start)} on ${esc(projLabel(projectById(run.projectId)))}.
+      The change is logged as manual, with the original start and the time you changed it.</div>
+    <form method="dialog" id="sf">
+      <label for="stime">New start time</label><input id="stime" type="time" step="60" value="${curVal}">
+      <div class="err" id="serr"></div>
+      <div class="actions"><button type="button" class="btn text" id="scancel">Cancel</button>
+        <button type="submit" class="btn text" id="sok" disabled>Change</button></div></form>`, d => {
+    const input = d.querySelector('#stime'), ok = d.querySelector('#sok'), err = d.querySelector('#serr');
+    let chosen = run.start;
+    const check = () => {
+      const now = Date.now();
+      const v = input.value;
+      if (!/^\d{2}:\d{2}/.test(v)) { err.textContent = 'Enter a time'; ok.disabled = true; return; }
+      const [hh, mm] = v.split(':').map(Number);
+      const [y, mo, da] = ymd(run.day);
+      const picked = new Date(y, mo, da, hh, mm).getTime();
+      if (hh === cur.getHours() && mm === cur.getMinutes()) chosen = run.start;
+      else if (picked < earliest && picked + 60000 > earliest) chosen = earliest;   // same minute as previous stop
+      else chosen = picked;
+      let msg = '';
+      if (chosen > now) msg = "Can't be in the future";
+      else if (chosen < earliest) msg = `Can't be before ${fmtTime(earliest)} (midnight or the previous timer's stop)`;
+      err.textContent = msg;
+      ok.disabled = !!msg || chosen === run.start;
+    };
+    input.oninput = input.onchange = check; check();
+    d.querySelector('#scancel').onclick = () => d.close();
+    d.querySelector('#sf').onsubmit = ev => {
+      ev.preventDefault();
+      check();
+      if (ok.disabled) return;
+      d.close();
+      changeStart(chosen);
+    };
+  });
+}
+
+/* ---------- backup ---------- */
+function exportBackup() {
+  const data = { app: 'timesheet', version: 1, exportedAt: new Date().toISOString(),
+    projects: S.projects, entries: S.entries, settings: S.settings };
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const a = document.createElement('a');
+  const d = new Date();
+  a.href = URL.createObjectURL(blob);
+  a.download = `timesheet-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+async function importBackup(file) {
+  let data;
+  try { data = JSON.parse(await file.text()); } catch (e) { return toast('That file is not a valid backup'); }
+  if (!data || data.app !== 'timesheet' || !Array.isArray(data.projects) || !Array.isArray(data.entries)) {
+    return toast('That file is not a Timesheet backup');
+  }
+  const ok = await confirmDialog('Restore backup?',
+    `This replaces everything in this browser with the backup (${data.projects.length} projects, ${data.entries.length} entries).`, 'Restore', true);
+  if (!ok) return;
+  S.projects = data.projects;
+  S.entries = data.entries;
+  S.settings = Object.assign({ retention: null, carry: false }, data.settings || {});
+  nextId = Math.max(0, ...S.projects.map(p => p.id), ...S.entries.map(e => e.id)) + 1;
+  const ch = newChange(); ch.replaceAll = true;
+  await commit(ch);
+  toast('Backup restored');
+}
+
+/* ---------- events ---------- */
+document.querySelector('nav.tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (!b) return;
+  tab = b.dataset.tab;
+  if (tab === 'settings') refreshSize();
+  render();
+  window.scrollTo(0, 0);
+});
+
+fab.addEventListener('click', () => projectDialog(null));
+
+main.addEventListener('click', async e => {
+  const el = e.target.closest('[data-action]');
+  if (!el) return;
+  const id = Number(el.dataset.id);
+  switch (el.dataset.action) {
+    case 'toggle': if (navigator.vibrate) navigator.vibrate(15); toggle(id); break;
+    case 'actions': e.stopPropagation(); actionsDialog(projectById(id)); break;
+    case 'stop': stopAll(); break;
+    case 'change-start': changeStartDialog(); break;
+    case 'toggle-log': showLog = !showLog; render(); break;
+    case 'del-manual': {
+      const en = S.entries.find(x => x.id === id);
+      if (!en) break;
+      const ok = await confirmDialog('Delete manual entry?',
+        `+${fmtDur(en.duration || 0)} on ${projLabel(projectById(en.projectId))}, added at ${fmtTime(en.createdAt)}.`, 'Delete', true);
+      if (ok) deleteManual(id);
+      break;
+    }
+    case 'expand': {
+      const day = Number(el.dataset.day);
+      expanded.has(day) ? expanded.delete(day) : expanded.add(day);
+      render(); break;
+    }
+    case 'dismiss-warn': warnDismissed = true; render(); break;
+    case 'go-settings': tab = 'settings'; refreshSize(); render(); break;
+    case 'clear-before': {
+      const v = document.getElementById('clear-date').value;
+      if (!v) return toast('Choose a date first');
+      const [y, m, d] = v.split('-').map(Number);
+      const day = Math.round(Date.UTC(y, m - 1, d) / DAY);
+      if (day > today) return toast("Choose today or an earlier date");
+      const ok = await confirmDialog('Clear history?',
+        `All history before ${fmtMdy(day)} will be permanently deleted. Entries on ${fmtMdy(day)} and later are kept.`, 'Clear', true);
+      if (ok) clearBefore(day);
+      break;
+    }
+    case 'export': exportBackup(); break;
+    case 'import': document.getElementById('import-file').click(); break;
+  }
+});
+
+/* Long-press (touch) or right-click on a tile opens its menu. */
+main.addEventListener('contextmenu', e => {
+  const tile = e.target.closest('.tile');
+  if (!tile) return;
+  e.preventDefault();
+  actionsDialog(projectById(Number(tile.dataset.id)));
+});
+
+main.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target.closest('.tile, .hist-head');
+  if (!el || e.target.closest('button') && e.target.closest('button') !== el) return;
+  e.preventDefault();
+  el.click();
+});
+
+main.addEventListener('change', async e => {
+  if (e.target.id === 'carry') return setCarry(e.target.checked);
+  if (e.target.id === 'import-file') {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) importBackup(f);
+    return;
+  }
+  if (e.target.id === 'retention') {
+    const days = e.target.value === '' ? null : Number(e.target.value);
+    const oldest = S.entries.length ? Math.min(...S.entries.map(x => x.day)) : null;
+    if (days != null && oldest != null && oldest < today - days) {
+      const label = RETENTION.find(r => r[0] === days)[1].toLowerCase();
+      const ok = await confirmDialog('Delete older history?',
+        `Keeping ${label} will permanently delete history before ${fmtMdy(today - days)}.`, 'Delete', true);
+      if (!ok) { render(); return; }
+    }
+    setRetention(days);
+  }
+});
+
+let toastTimer;
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+/* ---------- start ---------- */
+(async function start() {
+  await storage.init();
+  try {
+    await reload();
+  } catch (e) {
+    toast('Could not read saved data');
+    render();
+  }
+  // Catch up on any midnights missed while the page was closed, then apply retention.
+  const now = Date.now(), ch = newChange();
+  rolloverInto(now, ch);
+  const pruned = pruneInto(now, ch);
+  if (ch.entries.length || pruned) await commit(ch);
+  if (storage.kind === 'memory') toast("This browser isn't allowing saved data — times will be lost when you close the page");
+  scheduleTick();
+})();
+</script>
+</body>
+</html>

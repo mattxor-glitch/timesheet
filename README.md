@@ -21,6 +21,13 @@ Starting another project stops the current one, and tapping the running tile sto
 - **Clear history before a date**: Settings → *Clear history before a date…* (shown as mm/dd/yyyy).
   The database is compacted afterwards so the file actually shrinks.
 
+## Web version
+
+`web/timesheet.html` is the same app as a single HTML file with no dependencies. Open it in any modern
+browser, either straight from disk or hosted anywhere. Data is saved in that browser (IndexedDB) and kept
+between visits; use *Settings → Save backup* now and then, since clearing browser data deletes it.
+The web and Android versions keep separate data.
+
 ## No launch warnings
 
 - Targets the current Android API level (36), so there's no "built for an older version of Android" dialog.
