@@ -15,6 +15,9 @@ Starting another project stops the current one, and tapping the running tile sto
 - **Change start time**: while a timer is running, tap *Change start* (or long-press its tile). The entry is
   marked **manual** and shows the original start and when it was changed. It can't go before midnight or
   before the previous timer's stop time.
+- **Edit today's time**: tap *Edit* on the Today card to see every project's total for today, or long-press a
+  tile → *Edit today's time*. Enter the total it should be; the difference is logged as a time-stamped
+  **manual** adjustment (e.g. "Set total to 2:30 · was 2:45 · −0:15"). Delete the adjustment to undo it.
 - **Edit and delete entries**: in a day's log, each entry can be deleted (any day) or edited (today):
   start/stop times, project, or a manual entry's amount. Edits can't overlap other entries or go into the
   future; they're marked **manual** with the edit time and the original values.

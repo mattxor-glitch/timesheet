@@ -197,7 +197,17 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 function projLabel(p) { return p ? `${p.number} ${p.name}`.trim() : 'Deleted project'; }
 
 /* ---------- entries ---------- */
-function elapsed(e, now) { return e.manual ? Math.max(0, e.duration || 0) : Math.max(0, (e.end ?? now) - e.start); }
+/** Manual entries can be negative when they are "set today's total" adjustments. */
+function elapsed(e, now) { return e.manual ? (e.duration || 0) : Math.max(0, (e.end ?? now) - e.start); }
+function isAdjustment(e) { return e.manual && e.setTotal != null; }
+function fmtSigned(ms) { return (ms < 0 ? '−' : '+') + fmtDur(Math.abs(ms)); }
+/** Today's total per project, never below zero. */
+function todayTotals(now = Date.now()) {
+  const t = {};
+  for (const e of S.entries) if (e.day === today) t[e.projectId] = (t[e.projectId] || 0) + elapsed(e, now);
+  for (const k in t) t[k] = Math.max(0, t[k]);
+  return t;
+}
 function isRunning(e) { return !e.manual && e.end == null; }
 function runningEntries() { return S.entries.filter(isRunning); }
 function projectById(id) { return S.projects.find(p => p.id === id); }
@@ -377,6 +387,22 @@ async function addManual(projectId, duration) {
   toast(`Added ${fmtDur(duration)} to ${projLabel(projectById(projectId))}`);
 }
 
+/** Sets a project's total for today by logging a time-stamped adjustment (may be negative).
+    A running timer keeps counting from the new total. */
+async function setTodayTotal(projectId, target) {
+  const now = Date.now(), ch = newChange();
+  rolloverInto(now, ch);
+  if (dayOf(now) !== today) today = dayOf(now);
+  const current = S.entries.filter(e => e.day === today && e.projectId === projectId).reduce((a, e) => a + elapsed(e, now), 0);
+  const delta = target - current;
+  if (delta !== 0) {
+    const e = newEntry(projectId, now, { end: now, manual: true, duration: delta, createdAt: now, setTotal: target });
+    S.entries.push(e); ch.entries.push(e);
+  }
+  await commit(ch);
+  toast(delta === 0 ? 'No change' : `${projLabel(projectById(projectId))} set to ${fmtDur(target)} today`);
+}
+
 /** Deletes any entry (a running timer simply stops counting). */
 async function deleteEntry(id) {
   const ch = newChange();
@@ -415,6 +441,7 @@ async function editEntry(id, changes) {
     if (e.origEnd == null && end !== e.end) e.origEnd = e.end;
     e.start = changes.start; e.end = end;
   } else {
+    if (isAdjustment(e)) return toast("Adjustments can't be edited; delete it instead");
     if (!(changes.duration > 0)) return toast('Enter an amount of time');
     if (changes.projectId === e.projectId && changes.duration === e.duration) return;
     if (e.origDuration == null && changes.duration !== e.duration) e.origDuration = e.duration;
@@ -517,14 +544,8 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) tick
 
 /** Updates only the running numbers, so the page doesn't redraw every second. */
 function updateLive(now = Date.now()) {
-  const todays = S.entries.filter(e => e.day === today);
-  const perProject = {};
-  let total = 0;
-  for (const e of todays) {
-    const t = elapsed(e, now);
-    perProject[e.projectId] = (perProject[e.projectId] || 0) + t;
-    total += t;
-  }
+  const perProject = todayTotals(now);
+  const total = Object.values(perProject).reduce((a, b) => a + b, 0);
   document.querySelectorAll('[data-live]').forEach(el => {
     const k = el.dataset.live;
     let v;
@@ -580,7 +601,8 @@ function renderTimers() {
     </div>
     <div class="right" style="margin-top:6px">
       ${run ? '<button class="btn text" data-action="change-start">Change start</button>' : ''}
-      <button class="btn text" data-action="toggle-log">${showLog ? 'Hide log' : `Today's log (${todays.length})`}</button>
+      <button class="btn text" data-action="edit-today">Edit</button>
+      <button class="btn text" data-action="toggle-log">${showLog ? 'Hide log' : `Log (${todays.length})`}</button>
     </div></div>`;
 
   if (showLog) h += `<div class="card">${renderLog(todays, true)}</div>`;
@@ -607,6 +629,7 @@ function renderTimers() {
 }
 
 function describeEntry(e) {
+  if (isAdjustment(e)) return 'Set total to ' + fmtDur(e.setTotal);
   if (e.manual) return '+' + fmtDur(e.duration || 0);
   return `${fmtTime(e.start)} – ${e.end == null ? 'running' : fmtTime(e.end)}`;
 }
@@ -633,7 +656,10 @@ function renderLog(entries, canEdit) {
   if (!entries.length) return '<div class="muted small">No entries</div>';
   return entries.map(e => {
     const p = projectById(e.projectId);
-    const notes = [e.manual ? `Added at ${fmtTime(e.createdAt)}` : '', editNote(e)].filter(Boolean);
+    const notes = [
+      isAdjustment(e) ? `At ${fmtTime(e.createdAt)} · was ${fmtDur(e.setTotal - (e.duration || 0))} · ${fmtSigned(e.duration || 0)}`
+        : e.manual ? `Added at ${fmtTime(e.createdAt)}` : '',
+      editNote(e)].filter(Boolean);
     const tag = (e.manual || e.editedAt != null) ? '<span class="tag">MANUAL</span>' : '';
     const time = e.manual ? '' : `<span class="mono small" data-live="e:${e.id}">0:00:00</span>`;
     return `<div class="log-entry"><div class="grow">
@@ -641,7 +667,7 @@ function renderLog(entries, canEdit) {
         <div class="small ellipsis">${esc(projLabel(p))}</div>
         ${notes.map(n => `<div class="small muted">${esc(n)}</div>`).join('')}
       </div>${time}
-      ${canEdit ? `<button class="icon-btn" data-action="edit-entry" data-id="${e.id}" aria-label="Edit entry" title="Edit">${ICON_EDIT}</button>` : ''}
+      ${canEdit && !isAdjustment(e) ? `<button class="icon-btn" data-action="edit-entry" data-id="${e.id}" aria-label="Edit entry" title="Edit">${ICON_EDIT}</button>` : ''}
       <button class="icon-btn" data-action="del-entry" data-id="${e.id}" aria-label="Delete entry" title="Delete">${ICON_DELETE}</button>
       </div>`;
   }).join('');
@@ -658,7 +684,7 @@ function renderHistory() {
   const days = [...byDay.keys()].sort((a, b) => b - a);
   if (!days.length) return '<div class="empty">No history yet.<br>Each day\'s times are saved here after midnight.</div>';
   return days.map(day => {
-    const totals = [...byDay.get(day)].sort((a, b) => b[1] - a[1]);
+    const totals = [...byDay.get(day)].map(([k, v]) => [k, Math.max(0, v)]).sort((a, b) => b[1] - a[1]);
     const sum = totals.reduce((s, [, t]) => s + t, 0);
     const open = expanded.has(day);
     return `<div class="card">
@@ -775,10 +801,12 @@ function projectDialog(p) {
 function actionsDialog(p) {
   const r = runningEntries().some(e => e.projectId === p.id);
   openDialog(`<h2>${esc(projLabel(p))}</h2><div class="stack">
+      <button class="btn outline" id="a-today">Edit today's time</button>
       <button class="btn outline" id="a-add">Add time for today</button>
       ${r ? '<button class="btn outline" id="a-start">Change start time</button>' : ''}
       <button class="btn outline" id="a-edit">Edit or remove project</button></div>
     <div class="actions"><button class="btn text" id="a-close">Close</button></div>`, d => {
+    d.querySelector('#a-today').onclick = () => setTotalDialog(p);
     d.querySelector('#a-add').onclick = () => addTimeDialog(p);
     const s = d.querySelector('#a-start'); if (s) s.onclick = () => changeStartDialog();
     d.querySelector('#a-edit').onclick = () => projectDialog(p);
@@ -862,6 +890,62 @@ function changeStartDialog() {
       if (ok.disabled) return;
       d.close();
       changeStart(chosen);
+    };
+  });
+}
+
+/** Lists every project's total for today; pick one to set it. */
+function editTodayDialog() {
+  const totals = todayTotals();
+  const rows = S.projects.filter(p => !p.archived || totals[p.id])
+    .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true, sensitivity: 'base' }) || a.name.localeCompare(b.name));
+  openDialog(`<h2>Edit today's times</h2>
+    <div class="small muted" style="margin-bottom:8px">Tap a project to set its total for today.</div>
+    ${rows.length ? rows.map(p => `<button type="button" class="log-entry" data-pid="${p.id}"
+        style="width:100%;background:none;border-left:0;border-right:0;border-bottom:0;cursor:pointer;text-align:left;padding:12px 2px">
+        <span class="grow ellipsis">${esc(projLabel(p))}</span>
+        <span class="mono">${fmtClock(totals[p.id] || 0)}</span>${ICON_EDIT}</button>`).join('') : '<div class="muted">No projects yet.</div>'}
+    <div class="actions"><button type="button" class="btn text" id="etdone">Done</button></div>`, d => {
+    d.querySelectorAll('[data-pid]').forEach(b => b.onclick = () => setTotalDialog(projectById(Number(b.dataset.pid))));
+    d.querySelector('#etdone').onclick = () => d.close();
+  });
+}
+
+/** Sets one project's total for today; the difference is logged as an adjustment. */
+function setTotalDialog(p) {
+  const current = todayTotals()[p.id] || 0;
+  const mins = Math.floor(current / 60000);
+  openDialog(`<h2>Edit today's time</h2>
+    <div style="font-weight:600">${esc(projLabel(p))}</div>
+    <div class="small" style="margin-top:6px">Currently ${fmtClock(current)} today. Enter the total it should be;
+      the change is logged as a manual adjustment with the time it was made.</div>
+    <form method="dialog" id="stf">
+      <div class="row" style="align-items:flex-end">
+        <div class="grow"><label for="sth">Hours</label><input id="sth" type="number" inputmode="numeric" min="0" max="24" value="${Math.floor(mins / 60)}"></div>
+        <div class="grow"><label for="stm">Minutes</label><input id="stm" type="number" inputmode="numeric" min="0" max="59" value="${mins % 60}"></div>
+      </div>
+      <div class="err" id="sterr"></div>
+      <div class="actions"><button type="button" class="btn text" id="stcancel">Cancel</button>
+        <button type="submit" class="btn text" id="stsave" disabled>Save</button></div></form>`, d => {
+    const hEl = d.querySelector('#sth'), mEl = d.querySelector('#stm'), save = d.querySelector('#stsave'), err = d.querySelector('#sterr');
+    let target = 0;
+    const check = () => {
+      const h = hEl.value.trim() === '' ? 0 : Number(hEl.value), m = mEl.value.trim() === '' ? 0 : Number(mEl.value);
+      let msg = '';
+      if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || m < 0) msg = 'Enter whole hours and minutes';
+      else if (m > 59) msg = 'Minutes must be 0–59';
+      target = (h * 60 + m) * 60000;
+      if (!msg && target > 24 * 3600000) msg = 'Up to 24 hours';
+      err.textContent = msg;
+      save.disabled = !!msg || h * 60 + m === mins;
+    };
+    hEl.oninput = mEl.oninput = check; check();
+    d.querySelector('#stcancel').onclick = () => d.close();
+    d.querySelector('#stf').onsubmit = ev => {
+      ev.preventDefault(); check();
+      if (save.disabled) return;
+      d.close();
+      setTodayTotal(p.id, target);
     };
   });
 }
@@ -1021,6 +1105,7 @@ main.addEventListener('click', async e => {
       break;
     }
     case 'edit-entry': editEntryDialog(id); break;
+    case 'edit-today': editTodayDialog(); break;
     case 'expand': {
       const day = Number(el.dataset.day);
       expanded.has(day) ? expanded.delete(day) : expanded.add(day);
