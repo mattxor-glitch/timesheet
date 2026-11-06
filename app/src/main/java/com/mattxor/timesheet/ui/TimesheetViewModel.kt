@@ -116,6 +116,16 @@ class TimesheetViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun setTodayTotal(project: Project, targetMillis: Long) {
+        viewModelScope.launch {
+            val delta = repo.setTodayTotal(project.id, targetMillis)
+            _messages.send(
+                if (delta == 0L) "No change"
+                else "${projectLabel(project)} set to ${formatDuration(targetMillis)} today"
+            )
+        }
+    }
+
     fun deleteEntry(entry: TimeEntry) {
         viewModelScope.launch {
             repo.deleteEntry(entry)

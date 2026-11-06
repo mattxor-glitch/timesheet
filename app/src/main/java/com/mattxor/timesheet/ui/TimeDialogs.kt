@@ -1,6 +1,7 @@
 package com.mattxor.timesheet.ui
 
 import android.text.format.DateFormat
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,10 +11,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -28,8 +33,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,12 +58,14 @@ fun ProjectActionsDialog(
     onAddTime: () -> Unit,
     onChangeStart: () -> Unit,
     onEdit: () -> Unit,
+    onEditToday: () -> Unit,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${project.number} ${project.name}".trim()) },
         text = {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onEditToday, modifier = Modifier.fillMaxWidth()) { Text("Edit today's time") }
                 OutlinedButton(onClick = onAddTime, modifier = Modifier.fillMaxWidth()) { Text("Add time for today") }
                 if (isRunning) {
                     OutlinedButton(onClick = onChangeStart, modifier = Modifier.fillMaxWidth()) {
@@ -319,6 +328,121 @@ fun EditEntryDialog(
             TextButton(enabled = error == null && changed, onClick = { onSaveTimer(projectId, newStart, newEnd) }) {
                 Text("Save")
             }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Lists every project's total for today; tapping one opens [SetTotalDialog]. */
+@Composable
+fun EditTodayDialog(
+    projects: List<Project>,
+    totals: Map<Long, Long>,
+    onDismiss: () -> Unit,
+    onPick: (Project) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit today's times") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                if (projects.isEmpty()) Text("No projects yet.")
+                Text(
+                    "Tap a project to set its total for today.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                projects.forEach { p ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(p) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            projectLabel(p),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            formatClock(totals[p.id] ?: 0L),
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 8.dp),
+                        )
+                        Icon(Icons.Filled.Edit, contentDescription = "Edit ${projectLabel(p)}")
+                    }
+                    HorizontalDivider()
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+    )
+}
+
+/**
+ * Sets a project's total for today. The difference is logged as a time-stamped adjustment;
+ * a running timer keeps counting from the new total.
+ */
+@Composable
+fun SetTotalDialog(
+    project: Project,
+    currentMillis: Long,
+    onDismiss: () -> Unit,
+    onSave: (targetMillis: Long) -> Unit,
+) {
+    // Snapshot the total when the dialog opens so the fields don't move while typing.
+    val startMinutes = rememberSaveable(project.id) { currentMillis / 60_000 }
+    val startSnapshot = rememberSaveable(project.id) { currentMillis }
+    var hours by rememberSaveable(project.id) { mutableStateOf((startMinutes / 60).toString()) }
+    var minutes by rememberSaveable(project.id) { mutableStateOf((startMinutes % 60).toString()) }
+    val h = hours.toIntOrNull() ?: 0
+    val m = minutes.toIntOrNull() ?: 0
+    val target = (h * 60L + m) * 60_000L
+    val error = when {
+        m > 59 -> "Minutes must be 0–59"
+        target > 24 * 3_600_000L -> "Up to 24 hours"
+        else -> null
+    }
+    val unchanged = h * 60L + m == startMinutes
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit today's time") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(projectLabel(project), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Currently ${formatClock(startSnapshot)} today. Enter the total it should be; " +
+                        "the change is logged as a manual adjustment with the time it was made.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = hours,
+                        onValueChange = { hours = it.filter(Char::isDigit).take(2) },
+                        label = { Text("Hours") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = minutes,
+                        onValueChange = { minutes = it.filter(Char::isDigit).take(2) },
+                        label = { Text("Minutes") },
+                        singleLine = true,
+                        isError = m > 59,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                if (error != null) Text(error, color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = error == null && !unchanged, onClick = { onSave(target) }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

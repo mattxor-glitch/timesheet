@@ -124,6 +124,7 @@ private fun TimeEntry.sortTime(): Long = if (manual) createdAtMillis else startM
 fun projectLabel(p: Project?): String = p?.let { "${it.number} ${it.name}".trim() } ?: "Deleted project"
 
 private fun describe(e: TimeEntry): String = when {
+    e.isAdjustment -> "Set total to " + formatDuration(e.setTotalMillis ?: 0)
     e.manual -> "+" + formatDuration(e.durationMillis ?: 0)
     e.endMillis == null -> "${formatTime(e.startMillis)} – running"
     else -> "${formatTime(e.startMillis)} – ${formatTime(e.endMillis)}"
@@ -176,7 +177,15 @@ private fun EntryRow(
                 overflow = TextOverflow.Ellipsis,
             )
             val notes = listOfNotNull(
-                if (entry.manual) "Added at ${formatTime(entry.createdAtMillis)}" else null,
+                when {
+                    entry.isAdjustment -> {
+                        val delta = entry.durationMillis ?: 0
+                        "At ${formatTime(entry.createdAtMillis)} · was ${formatDuration((entry.setTotalMillis ?: 0) - delta)} · " +
+                            formatSignedDuration(delta)
+                    }
+                    entry.manual -> "Added at ${formatTime(entry.createdAtMillis)}"
+                    else -> null
+                },
                 editNote(entry, projects),
             )
             notes.forEach {
@@ -195,7 +204,7 @@ private fun EntryRow(
                 Icon(Icons.Filled.MoreVert, contentDescription = "Entry options")
             }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                if (canEdit) {
+                if (canEdit && !entry.isAdjustment) {
                     DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; onEdit() })
                 }
                 DropdownMenuItem(

@@ -47,6 +47,10 @@ private val timeOfDay = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
 fun formatTime(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalTime().format(timeOfDay)
 
+/** "+1:30" / "−0:15" for adjustments. */
+fun formatSignedDuration(millis: Long): String =
+    (if (millis < 0) "−" else "+") + formatDuration(kotlin.math.abs(millis))
+
 /** "1:30" (hours:minutes). */
 fun formatDuration(millis: Long): String {
     val totalMinutes = millis.coerceAtLeast(0) / 60_000

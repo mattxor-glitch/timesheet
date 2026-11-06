@@ -54,14 +54,19 @@ data class TimeEntry(
     val originalEndMillis: Long? = null,
     val originalDurationMillis: Long? = null,
     val originalProjectId: Long? = null,
+    /** Set for "set today's total" adjustments: the total the project was set to. The adjustment
+        itself is [durationMillis], which may be negative. */
+    val setTotalMillis: Long? = null,
 ) {
     fun elapsed(now: Long): Long =
-        if (manual) (durationMillis ?: 0L).coerceAtLeast(0)
+        if (manual) (durationMillis ?: 0L)
         else ((endMillis ?: now) - startMillis).coerceAtLeast(0)
 
     val isRunning: Boolean get() = !manual && endMillis == null
 
     val isEdited: Boolean get() = startEditedAtMillis != null
+
+    val isAdjustment: Boolean get() = manual && setTotalMillis != null
 }
 
 data class DayProjectTotal(

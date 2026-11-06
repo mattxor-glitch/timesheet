@@ -67,13 +67,16 @@ fun TimersScreen(
     var actionsFor by remember { mutableStateOf<Project?>(null) }
     var addTimeFor by remember { mutableStateOf<Project?>(null) }
     var changingStart by rememberSaveable { mutableStateOf(false) }
+    var showEditToday by rememberSaveable { mutableStateOf(false) }
+    var setTotalFor by remember { mutableStateOf<Project?>(null) }
     val warningDismissed by vm.sizeWarningDismissed.collectAsStateWithLifecycle()
 
+    // Adjustments can be negative, so never show a project below zero.
     val totals: Map<Long, Long> = entries.groupBy { it.projectId }
-        .mapValues { (_, list) -> list.sumOf { it.elapsed(now) } }
+        .mapValues { (_, list) -> list.sumOf { it.elapsed(now) }.coerceAtLeast(0) }
     val running: TimeEntry? = entries.firstOrNull { it.isRunning }
     val runningProject = running?.let { r -> projects.firstOrNull { it.id == r.projectId } }
-    val dayTotal = entries.sumOf { it.elapsed(now) }
+    val dayTotal = totals.values.sum()
     val haptics = LocalHapticFeedback.current
 
     LazyVerticalGrid(
@@ -130,8 +133,9 @@ fun TimersScreen(
                     if (running != null) {
                         TextButton(onClick = { changingStart = true }) { Text("Change start") }
                     }
+                    TextButton(onClick = { showEditToday = true }) { Text("Edit") }
                     TextButton(onClick = { showLog = !showLog }) {
-                        Text(if (showLog) "Hide log" else "Today's log (${entries.size})")
+                        Text(if (showLog) "Hide log" else "Log (${entries.size})")
                     }
                 }
             }
@@ -199,6 +203,34 @@ fun TimersScreen(
             onEdit = {
                 actionsFor = null
                 onEditProject(project)
+            },
+            onEditToday = {
+                actionsFor = null
+                setTotalFor = project
+            },
+        )
+    }
+
+    if (showEditToday) {
+        // Active projects plus any removed project that has time today.
+        val rows = (projects + totals.keys.mapNotNull { id -> projectsById[id] }.filter { it.archived })
+            .distinctBy { it.id }
+        EditTodayDialog(
+            projects = rows,
+            totals = totals,
+            onDismiss = { showEditToday = false },
+            onPick = { setTotalFor = it },
+        )
+    }
+
+    setTotalFor?.let { project ->
+        SetTotalDialog(
+            project = project,
+            currentMillis = totals[project.id] ?: 0L,
+            onDismiss = { setTotalFor = null },
+            onSave = { target ->
+                vm.setTodayTotal(project, target)
+                setTotalFor = null
             },
         )
     }

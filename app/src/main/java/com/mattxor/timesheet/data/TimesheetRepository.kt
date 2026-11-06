@@ -44,6 +44,33 @@ class TimesheetRepository(context: Context, val settings: Settings) {
         )
     }
 
+    /**
+     * Sets [projectId]'s total for today to [targetMillis] by adding a time-stamped adjustment
+     * (positive or negative). A running timer keeps running from the new total.
+     */
+    suspend fun setTodayTotal(projectId: Long, targetMillis: Long, now: Long = System.currentTimeMillis()): Long =
+        db.withTransaction {
+            rolloverLocked(now)
+            val day = dayOf(now)
+            val current = dao.getEntriesForDay(day).filter { it.projectId == projectId }.sumOf { it.elapsed(now) }
+            val delta = targetMillis - current
+            if (delta != 0L) {
+                dao.insertEntry(
+                    TimeEntry(
+                        projectId = projectId,
+                        day = day,
+                        startMillis = now,
+                        endMillis = now,
+                        manual = true,
+                        durationMillis = delta,
+                        createdAtMillis = now,
+                        setTotalMillis = targetMillis,
+                    )
+                )
+            }
+            delta
+        }
+
     /** Deletes any entry (including a running timer, which simply stops counting). */
     suspend fun deleteEntry(entry: TimeEntry) {
         dao.deleteEntry(entry.id)
@@ -88,6 +115,7 @@ class TimesheetRepository(context: Context, val settings: Settings) {
     ): String? = db.withTransaction {
         val e = dao.getEntry(id) ?: return@withTransaction "That entry no longer exists"
         if (!e.manual) return@withTransaction "Not a manual entry"
+        if (e.isAdjustment) return@withTransaction "Adjustments can't be edited; delete it instead"
         if (durationMillis <= 0) return@withTransaction "Enter an amount of time"
         if (projectId == e.projectId && durationMillis == e.durationMillis) return@withTransaction null
         dao.updateEntry(
