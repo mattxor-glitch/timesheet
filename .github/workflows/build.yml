@@ -3,6 +3,10 @@ name: Build APK
 on:
   push:
     branches: [main]
+    # Web-only or docs changes don't need a new Android release.
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
   workflow_dispatch:
 
 permissions:

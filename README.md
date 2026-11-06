@@ -23,8 +23,10 @@ Starting another project stops the current one, and tapping the running tile sto
 
 ## Web version
 
-`web/timesheet.html` is the same app as a single HTML file with no dependencies. Open it in any modern
-browser, either straight from disk or hosted anywhere. Data is saved in that browser (IndexedDB) and kept
+**Open it here: https://mattxor-glitch.github.io/timesheet/**
+
+`docs/index.html` is the same app as a single HTML file with no dependencies, published with GitHub Pages
+(Settings → Pages → Deploy from a branch → `main` / `/docs`). It also works saved to disk and opened directly. Data is saved in that browser (IndexedDB) and kept
 between visits; use *Settings → Save backup* now and then, since clearing browser data deletes it.
 The web and Android versions keep separate data.
 
