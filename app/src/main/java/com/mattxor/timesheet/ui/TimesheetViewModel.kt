@@ -116,10 +116,22 @@ class TimesheetViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun deleteManualEntry(entry: TimeEntry) {
+    fun deleteEntry(entry: TimeEntry) {
         viewModelScope.launch {
-            repo.deleteManualEntry(entry)
-            _messages.send("Manual entry deleted")
+            repo.deleteEntry(entry)
+            _messages.send("Entry deleted")
+        }
+    }
+
+    fun editTimerEntry(entry: TimeEntry, projectId: Long, newStart: Long, newEnd: Long?) {
+        viewModelScope.launch {
+            _messages.send(repo.editTimerEntry(entry.id, projectId, newStart, newEnd) ?: "Entry updated")
+        }
+    }
+
+    fun editManualEntry(entry: TimeEntry, projectId: Long, durationMillis: Long) {
+        viewModelScope.launch {
+            _messages.send(repo.editManualEntry(entry.id, projectId, durationMillis) ?: "Entry updated")
         }
     }
 

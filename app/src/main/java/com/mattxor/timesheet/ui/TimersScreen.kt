@@ -144,7 +144,10 @@ fun TimersScreen(
                         entries = entries,
                         projects = projectsById,
                         now = now,
-                        onDeleteManual = vm::deleteManualEntry,
+                        canEdit = true,
+                        onDelete = vm::deleteEntry,
+                        onEditTimer = vm::editTimerEntry,
+                        onEditManual = vm::editManualEntry,
                         modifier = Modifier.fillMaxWidth().padding(16.dp),
                     )
                 }

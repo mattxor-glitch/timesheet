@@ -44,8 +44,62 @@ class TimesheetRepository(context: Context, val settings: Settings) {
         )
     }
 
-    suspend fun deleteManualEntry(entry: TimeEntry) {
-        if (entry.manual) dao.deleteManualEntry(entry.id)
+    /** Deletes any entry (including a running timer, which simply stops counting). */
+    suspend fun deleteEntry(entry: TimeEntry) {
+        dao.deleteEntry(entry.id)
+    }
+
+    /**
+     * Edits a timer entry. [newEnd] is ignored for a running timer. Returns an error message,
+     * or null on success. The first value of each changed field is kept, and the edit is stamped.
+     */
+    suspend fun editTimerEntry(
+        id: Long,
+        projectId: Long,
+        newStart: Long,
+        newEnd: Long?,
+        now: Long = System.currentTimeMillis(),
+    ): String? = db.withTransaction {
+        val e = dao.getEntry(id) ?: return@withTransaction "That entry no longer exists"
+        if (e.manual) return@withTransaction "Not a timer entry"
+        val end = if (e.endMillis == null) null else (newEnd ?: return@withTransaction "Enter a stop time")
+        validateTimerTimes(e, newStart, end, dao.getEntriesForDay(e.day), now)?.let { return@withTransaction it }
+        if (projectId == e.projectId && newStart == e.startMillis && end == e.endMillis) return@withTransaction null
+        dao.updateEntry(
+            e.copy(
+                projectId = projectId,
+                startMillis = newStart,
+                endMillis = end,
+                originalStartMillis = e.originalStartMillis ?: e.startMillis.takeIf { it != newStart },
+                originalEndMillis = e.originalEndMillis ?: e.endMillis.takeIf { it != end },
+                originalProjectId = e.originalProjectId ?: e.projectId.takeIf { it != projectId },
+                startEditedAtMillis = now,
+            )
+        )
+        null
+    }
+
+    /** Edits a manual entry's amount and/or project. */
+    suspend fun editManualEntry(
+        id: Long,
+        projectId: Long,
+        durationMillis: Long,
+        now: Long = System.currentTimeMillis(),
+    ): String? = db.withTransaction {
+        val e = dao.getEntry(id) ?: return@withTransaction "That entry no longer exists"
+        if (!e.manual) return@withTransaction "Not a manual entry"
+        if (durationMillis <= 0) return@withTransaction "Enter an amount of time"
+        if (projectId == e.projectId && durationMillis == e.durationMillis) return@withTransaction null
+        dao.updateEntry(
+            e.copy(
+                projectId = projectId,
+                durationMillis = durationMillis,
+                originalDurationMillis = e.originalDurationMillis ?: e.durationMillis.takeIf { it != durationMillis },
+                originalProjectId = e.originalProjectId ?: e.projectId.takeIf { it != projectId },
+                startEditedAtMillis = now,
+            )
+        )
+        null
     }
 
     /** Earliest start the running [entry] may be moved to: midnight or the previous timer's stop. */
@@ -153,6 +207,33 @@ class TimesheetRepository(context: Context, val settings: Settings) {
         fun formatTimeOfDay(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
             Instant.ofEpochMilli(millis).atZone(zone).toLocalTime()
                 .format(java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT))
+
+        /**
+         * Checks new start/stop times for a timer entry on its own day: inside that day, not in
+         * the future, stop after start, and not overlapping another timer entry.
+         * [end] == null means the entry is still running.
+         */
+        fun validateTimerTimes(entry: TimeEntry, start: Long, end: Long?, dayEntries: List<TimeEntry>, now: Long): String? {
+            val dayStart = startOfDayMillis(entry.day)
+            val dayEnd = startOfDayMillis(entry.day + 1)
+            val effectiveEnd = end ?: now
+            return when {
+                start < dayStart -> "Start can't be before midnight"
+                start > now -> "Start can't be in the future"
+                end != null && end > now -> "Stop can't be in the future"
+                end != null && end > dayEnd -> "Stop can't be after midnight"
+                end != null && end <= start -> "Stop must be after start"
+                else -> dayEntries
+                    .firstOrNull { o ->
+                        !o.manual && o.id != entry.id && o.day == entry.day &&
+                            start < (o.endMillis ?: now) && effectiveEnd > o.startMillis
+                    }
+                    ?.let { o ->
+                        "Overlaps another entry (${formatTimeOfDay(o.startMillis)} – " +
+                            "${o.endMillis?.let { formatTimeOfDay(it) } ?: "running"})"
+                    }
+            }
+        }
 
         fun startOfDayMillis(day: Long, zone: ZoneId = ZoneId.systemDefault()): Long =
             LocalDate.ofEpochDay(day).atStartOfDay(zone).toInstant().toEpochMilli()

@@ -1,17 +1,19 @@
 package com.mattxor.timesheet.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -19,6 +21,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,16 +37,21 @@ import com.mattxor.timesheet.data.TimeEntry
 
 /**
  * The time-stamped log for one day: every start/stop and every manual entry, oldest first.
+ * Each entry has a menu to delete it, and to edit it when [canEdit] is true (today only).
  */
 @Composable
 fun EntryLog(
     entries: List<TimeEntry>,
     projects: Map<Long, Project>,
     now: Long,
-    onDeleteManual: (TimeEntry) -> Unit,
+    canEdit: Boolean,
+    onDelete: (TimeEntry) -> Unit,
+    onEditTimer: (entry: TimeEntry, projectId: Long, start: Long, end: Long?) -> Unit,
+    onEditManual: (entry: TimeEntry, projectId: Long, durationMillis: Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var confirmDelete by remember { mutableStateOf<TimeEntry?>(null) }
+    var editing by remember { mutableStateOf<TimeEntry?>(null) }
     val sorted = entries.sortedWith(compareBy({ it.sortTime() }, { it.id }))
 
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -55,72 +63,124 @@ fun EntryLog(
             )
         }
         sorted.forEach { entry ->
-            EntryRow(entry, projects[entry.projectId], now, onDelete = { confirmDelete = entry })
+            EntryRow(
+                entry = entry,
+                project = projects[entry.projectId],
+                projects = projects,
+                now = now,
+                canEdit = canEdit,
+                onEdit = { editing = entry },
+                onDelete = { confirmDelete = entry },
+            )
         }
     }
 
     confirmDelete?.let { entry ->
-        val p = projects[entry.projectId]
         AlertDialog(
             onDismissRequest = { confirmDelete = null },
-            title = { Text("Delete manual entry?") },
+            title = { Text("Delete entry?") },
             text = {
                 Text(
-                    "+${formatDuration(entry.durationMillis ?: 0)} on ${p?.number ?: ""} ${p?.name ?: ""}, " +
-                        "added at ${formatTime(entry.createdAtMillis)}."
+                    "${describe(entry)} on ${projectLabel(projects[entry.projectId])} will be permanently deleted." +
+                        if (entry.isRunning) " The timer stops." else ""
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    onDeleteManual(entry)
+                    onDelete(entry)
                     confirmDelete = null
                 }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } },
         )
     }
+
+    editing?.let { original ->
+        // Use the latest copy of the entry in case it changed (e.g. the timer was stopped).
+        val entry = entries.firstOrNull { it.id == original.id }
+        LaunchedEffect(entry == null) { if (entry == null) editing = null }
+        if (entry != null) {
+            EditEntryDialog(
+                entry = entry,
+                dayEntries = entries,
+                projects = projects,
+                now = now,
+                onDismiss = { editing = null },
+                onSaveTimer = { projectId, start, end ->
+                    onEditTimer(entry, projectId, start, end)
+                    editing = null
+                },
+                onSaveManual = { projectId, duration ->
+                    onEditManual(entry, projectId, duration)
+                    editing = null
+                },
+            )
+        }
+    }
 }
 
 private fun TimeEntry.sortTime(): Long = if (manual) createdAtMillis else startMillis
 
+fun projectLabel(p: Project?): String = p?.let { "${it.number} ${it.name}".trim() } ?: "Deleted project"
+
+private fun describe(e: TimeEntry): String = when {
+    e.manual -> "+" + formatDuration(e.durationMillis ?: 0)
+    e.endMillis == null -> "${formatTime(e.startMillis)} – running"
+    else -> "${formatTime(e.startMillis)} – ${formatTime(e.endMillis)}"
+}
+
+/** "Edited at 11:40 a.m. · was 8:45 a.m. – 10:12 a.m. · was on 1001" */
+private fun editNote(e: TimeEntry, projects: Map<Long, Project>): String? {
+    val editedAt = e.startEditedAtMillis ?: return null
+    val parts = mutableListOf("Edited at ${formatTime(editedAt)}")
+    if (e.manual) {
+        e.originalDurationMillis?.let { parts += "was +${formatDuration(it)}" }
+    } else if (e.originalStartMillis != null || e.originalEndMillis != null) {
+        val s = formatTime(e.originalStartMillis ?: e.startMillis)
+        val end = e.originalEndMillis ?: e.endMillis
+        parts += "was $s – ${end?.let { formatTime(it) } ?: "running"}"
+    }
+    e.originalProjectId?.let { parts += "was on ${projects[it]?.number?.ifBlank { null } ?: projectLabel(projects[it])}" }
+    return parts.joinToString(" · ")
+}
+
 @Composable
-private fun EntryRow(entry: TimeEntry, project: Project?, now: Long, onDelete: () -> Unit) {
+private fun EntryRow(
+    entry: TimeEntry,
+    project: Project?,
+    projects: Map<Long, Project>,
+    now: Long,
+    canEdit: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menu by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    when {
-                        entry.manual -> "+" + formatDuration(entry.durationMillis ?: 0)
-                        entry.endMillis == null -> "${formatTime(entry.startMillis)} – running"
-                        else -> "${formatTime(entry.startMillis)} – ${formatTime(entry.endMillis)}"
-                    },
+                    describe(entry),
                     style = MaterialTheme.typography.bodyMedium,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (entry.manual || entry.startEditedAtMillis != null) {
+                if (entry.manual || entry.isEdited) {
                     Spacer(Modifier.width(8.dp))
                     ManualTag()
                 }
             }
             Text(
-                "${project?.number ?: "?"} ${project?.name ?: "Deleted project"}".trim(),
+                projectLabel(project),
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val note = when {
-                entry.manual -> "Added at ${formatTime(entry.createdAtMillis)}"
-                entry.startEditedAtMillis != null && entry.originalStartMillis != null ->
-                    "Start changed from ${formatTime(entry.originalStartMillis)} at ${formatTime(entry.startEditedAtMillis)}"
-                else -> null
-            }
-            if (note != null) {
-                Text(
-                    note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            val notes = listOfNotNull(
+                if (entry.manual) "Added at ${formatTime(entry.createdAtMillis)}" else null,
+                editNote(entry, projects),
+            )
+            notes.forEach {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (!entry.manual) {
@@ -129,9 +189,19 @@ private fun EntryRow(entry: TimeEntry, project: Project?, now: Long, onDelete: (
                 style = MaterialTheme.typography.bodyMedium,
                 fontFamily = FontFamily.Monospace,
             )
-        } else {
-            IconButton(onClick = onDelete) {
-                Icon(Icons.Filled.Delete, contentDescription = "Delete manual entry", modifier = Modifier.size(20.dp))
+        }
+        Box {
+            IconButton(onClick = { menu = true }) {
+                Icon(Icons.Filled.MoreVert, contentDescription = "Entry options")
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                if (canEdit) {
+                    DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; onEdit() })
+                }
+                DropdownMenuItem(
+                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    onClick = { menu = false; onDelete() },
+                )
             }
         }
     }

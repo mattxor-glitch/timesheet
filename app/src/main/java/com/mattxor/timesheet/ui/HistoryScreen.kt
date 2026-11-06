@@ -110,11 +110,14 @@ fun HistoryScreen(vm: TimesheetViewModel, modifier: Modifier) {
                             entries = entries,
                             projects = projects,
                             now = System.currentTimeMillis(),
-                            onDeleteManual = vm::deleteManualEntry,
+                            canEdit = false,
+                            onDelete = vm::deleteEntry,
+                            onEditTimer = vm::editTimerEntry,
+                            onEditManual = vm::editManualEntry,
                         )
                     } else {
                         Text(
-                            "Tap to show start/stop times",
+                            "Tap to show start/stop times or delete entries",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 6.dp),

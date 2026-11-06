@@ -36,8 +36,14 @@ interface TimesheetDao {
     @Update
     suspend fun updateEntry(entry: TimeEntry)
 
-    @Query("DELETE FROM time_entries WHERE id = :id AND manual = 1")
-    suspend fun deleteManualEntry(id: Long)
+    @Query("DELETE FROM time_entries WHERE id = :id")
+    suspend fun deleteEntry(id: Long)
+
+    @Query("SELECT * FROM time_entries WHERE id = :id")
+    suspend fun getEntry(id: Long): TimeEntry?
+
+    @Query("SELECT * FROM time_entries WHERE day = :day")
+    suspend fun getEntriesForDay(day: Long): List<TimeEntry>
 
     /** Latest stop time of other timer entries on [day]; a changed start can't go before it. */
     @Query("SELECT MAX(endMillis) FROM time_entries WHERE day = :day AND manual = 0 AND endMillis IS NOT NULL AND id != :excludeId")

@@ -19,8 +19,11 @@ data class Project(
  * One line in the time log. [day] is the local date (LocalDate.toEpochDay()) it belongs to.
  *
  * Timer entries: [startMillis]..[endMillis] are the start/stop timestamps; a running timer has
- * [endMillis] == null. If the start was changed by hand, [originalStartMillis] holds the old start
- * and [startEditedAtMillis] when the change was made.
+ * [endMillis] == null.
+ *
+ * Any hand edit stamps [startEditedAtMillis] (the "edited at" time) and keeps the first value of
+ * whatever changed in originalStartMillis / originalEndMillis / originalDurationMillis /
+ * originalProjectId, so the log can show what it was before.
  *
  * Manual entries ([manual] == true): a total amount of time, [durationMillis], added at
  * [createdAtMillis]. Their start/end are both set to the time they were added.
@@ -48,12 +51,17 @@ data class TimeEntry(
     @ColumnInfo(defaultValue = "0") val createdAtMillis: Long = startMillis,
     val originalStartMillis: Long? = null,
     val startEditedAtMillis: Long? = null,
+    val originalEndMillis: Long? = null,
+    val originalDurationMillis: Long? = null,
+    val originalProjectId: Long? = null,
 ) {
     fun elapsed(now: Long): Long =
         if (manual) (durationMillis ?: 0L).coerceAtLeast(0)
         else ((endMillis ?: now) - startMillis).coerceAtLeast(0)
 
     val isRunning: Boolean get() = !manual && endMillis == null
+
+    val isEdited: Boolean get() = startEditedAtMillis != null
 }
 
 data class DayProjectTotal(
