@@ -207,7 +207,7 @@ function entriesForDay(day) {
 }
 function newEntry(projectId, start, extra = {}) {
   return { id: nextId++, projectId, day: dayOf(start), start, end: null, manual: false, duration: null,
-    createdAt: start, origStart: null, editedAt: null, ...extra };
+    createdAt: start, origStart: null, origEnd: null, origDuration: null, origProject: null, editedAt: null, ...extra };
 }
 
 /* ---------- storage ---------- */
@@ -377,11 +377,55 @@ async function addManual(projectId, duration) {
   toast(`Added ${fmtDur(duration)} to ${projLabel(projectById(projectId))}`);
 }
 
-async function deleteManual(id) {
+/** Deletes any entry (a running timer simply stops counting). */
+async function deleteEntry(id) {
   const ch = newChange();
-  removeEntries(e => e.id === id && e.manual, ch);
+  removeEntries(e => e.id === id, ch);
   await commit(ch);
-  toast('Manual entry deleted');
+  toast('Entry deleted');
+}
+
+/** Checks start/stop for a timer entry on its own day: inside the day, not in the future,
+    stop after start, no overlap with another timer entry. end == null means still running. */
+function validateTimer(entry, start, end, now) {
+  const dayStart = startOfDay(entry.day), dayEnd = startOfDay(entry.day + 1);
+  const effEnd = end ?? now;
+  if (start < dayStart) return "Start can't be before midnight";
+  if (start > now) return "Start can't be in the future";
+  if (end != null && end > now) return "Stop can't be in the future";
+  if (end != null && end > dayEnd) return "Stop can't be after midnight";
+  if (end != null && end <= start) return 'Stop must be after start';
+  const o = S.entries.find(x => !x.manual && x.id !== entry.id && x.day === entry.day &&
+    start < (x.end ?? now) && effEnd > x.start);
+  if (o) return `Overlaps another entry (${fmtTime(o.start)} – ${o.end == null ? 'running' : fmtTime(o.end)})`;
+  return null;
+}
+
+/** Applies an edit, keeping the first original value of anything that changed, and stamps it. */
+async function editEntry(id, changes) {
+  const e = S.entries.find(x => x.id === id);
+  if (!e) return toast('That entry no longer exists');
+  const now = Date.now();
+  if (!e.manual) {
+    const end = e.end == null ? null : changes.end;
+    const err = validateTimer(e, changes.start, end, now);
+    if (err) return toast(err);
+    if (changes.projectId === e.projectId && changes.start === e.start && end === e.end) return;
+    if (e.origStart == null && changes.start !== e.start) e.origStart = e.start;
+    if (e.origEnd == null && end !== e.end) e.origEnd = e.end;
+    e.start = changes.start; e.end = end;
+  } else {
+    if (!(changes.duration > 0)) return toast('Enter an amount of time');
+    if (changes.projectId === e.projectId && changes.duration === e.duration) return;
+    if (e.origDuration == null && changes.duration !== e.duration) e.origDuration = e.duration;
+    e.duration = changes.duration;
+  }
+  if (e.origProject == null && changes.projectId !== e.projectId) e.origProject = e.projectId;
+  e.projectId = changes.projectId;
+  e.editedAt = now;
+  const ch = newChange(); ch.entries.push(e);
+  await commit(ch);
+  toast('Entry updated');
 }
 
 function earliestStartFor(entry) {
@@ -539,7 +583,7 @@ function renderTimers() {
       <button class="btn text" data-action="toggle-log">${showLog ? 'Hide log' : `Today's log (${todays.length})`}</button>
     </div></div>`;
 
-  if (showLog) h += `<div class="card">${renderLog(todays)}</div>`;
+  if (showLog) h += `<div class="card">${renderLog(todays, true)}</div>`;
 
   if (!projects.length) {
     h += `<div class="empty">No projects yet.<br>Tap <strong>+ Project</strong> to add your first project number and name.<br>
@@ -562,28 +606,44 @@ function renderTimers() {
   return h;
 }
 
-function renderLog(entries) {
+function describeEntry(e) {
+  if (e.manual) return '+' + fmtDur(e.duration || 0);
+  return `${fmtTime(e.start)} – ${e.end == null ? 'running' : fmtTime(e.end)}`;
+}
+
+/** "Edited at 11:40 a.m. · was 8:45 a.m. – 10:12 a.m. · was on 1001" */
+function editNote(e) {
+  if (e.editedAt == null) return '';
+  const parts = [`Edited at ${fmtTime(e.editedAt)}`];
+  if (e.manual) {
+    if (e.origDuration != null) parts.push(`was +${fmtDur(e.origDuration)}`);
+  } else if (e.origStart != null || e.origEnd != null) {
+    const end = e.origEnd ?? e.end;
+    parts.push(`was ${fmtTime(e.origStart ?? e.start)} – ${end == null ? 'running' : fmtTime(end)}`);
+  }
+  if (e.origProject != null) { const op = projectById(e.origProject); parts.push(`was on ${op && op.number ? op.number : projLabel(op)}`); }
+  return parts.join(' · ');
+}
+
+const ICON_EDIT = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>';
+const ICON_DELETE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>';
+
+/** Time-stamped log for one day. Every entry can be deleted; [canEdit] (today) adds Edit. */
+function renderLog(entries, canEdit) {
   if (!entries.length) return '<div class="muted small">No entries</div>';
   return entries.map(e => {
     const p = projectById(e.projectId);
-    let head, note = '';
-    if (e.manual) {
-      head = '+' + fmtDur(e.duration || 0);
-      note = `Added at ${fmtTime(e.createdAt)}`;
-    } else {
-      head = `${fmtTime(e.start)} – ${e.end == null ? 'running' : fmtTime(e.end)}`;
-      if (e.editedAt != null && e.origStart != null) note = `Start changed from ${fmtTime(e.origStart)} at ${fmtTime(e.editedAt)}`;
-    }
+    const notes = [e.manual ? `Added at ${fmtTime(e.createdAt)}` : '', editNote(e)].filter(Boolean);
     const tag = (e.manual || e.editedAt != null) ? '<span class="tag">MANUAL</span>' : '';
-    const right = e.manual
-      ? `<button class="icon-btn" data-action="del-manual" data-id="${e.id}" aria-label="Delete manual entry" title="Delete manual entry">
-           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>`
-      : `<span class="mono small" data-live="e:${e.id}">0:00:00</span>`;
+    const time = e.manual ? '' : `<span class="mono small" data-live="e:${e.id}">0:00:00</span>`;
     return `<div class="log-entry"><div class="grow">
-        <div><span class="mono" style="font-weight:600">${head}</span>${tag}</div>
+        <div><span class="mono" style="font-weight:600">${describeEntry(e)}</span>${tag}</div>
         <div class="small ellipsis">${esc(projLabel(p))}</div>
-        ${note ? `<div class="small muted">${note}</div>` : ''}
-      </div>${right}</div>`;
+        ${notes.map(n => `<div class="small muted">${esc(n)}</div>`).join('')}
+      </div>${time}
+      ${canEdit ? `<button class="icon-btn" data-action="edit-entry" data-id="${e.id}" aria-label="Edit entry" title="Edit">${ICON_EDIT}</button>` : ''}
+      <button class="icon-btn" data-action="del-entry" data-id="${e.id}" aria-label="Delete entry" title="Delete">${ICON_DELETE}</button>
+      </div>`;
   }).join('');
 }
 
@@ -610,9 +670,9 @@ function renderHistory() {
           return `<div class="proj-row"><strong>${esc(p ? p.number : '?')}</strong>
             <span class="grow ellipsis">${esc(p ? p.name : 'Deleted project')}</span><span class="mono">${fmtHours(t)}</span></div>`;
         }).join('')}
-        ${open ? '' : '<div class="small muted" style="margin-top:6px">Tap to show start/stop times</div>'}
+        ${open ? '' : '<div class="small muted" style="margin-top:6px">Tap to show start/stop times or delete entries</div>'}
       </div>
-      ${open ? `<hr><div class="small" style="color:var(--primary);font-weight:600;margin-bottom:4px">Time log</div>${renderLog(entriesForDay(day))}` : ''}
+      ${open ? `<hr><div class="small" style="color:var(--primary);font-weight:600;margin-bottom:4px">Time log</div>${renderLog(entriesForDay(day), false)}` : ''}
     </div>`;
   }).join('');
 }
@@ -806,6 +866,98 @@ function changeStartDialog() {
   });
 }
 
+function timeValue(ms) { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; }
+
+/** Turns an "HH:MM" input on the entry's day into a timestamp; an unchanged value keeps the exact original. */
+function resolveTime(entry, value, orig) {
+  if (!/^\d{2}:\d{2}/.test(value)) return NaN;
+  if (orig != null && value.slice(0, 5) === timeValue(orig)) return orig;
+  const [hh, mm] = value.split(':').map(Number);
+  const [y, mo, da] = ymd(entry.day);
+  return new Date(y, mo, da, hh, mm).getTime();
+}
+
+function editEntryDialog(id) {
+  const e = S.entries.find(x => x.id === id);
+  if (!e) return;
+  const choices = S.projects.filter(p => !p.archived || p.id === e.projectId)
+    .sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true, sensitivity: 'base' }) || a.name.localeCompare(b.name));
+  const projectSelect = `<label for="eproj">Project</label><select id="eproj" style="width:100%">
+    ${choices.map(p => `<option value="${p.id}" ${p.id === e.projectId ? 'selected' : ''}>${esc(projLabel(p))}</option>`).join('')}</select>`;
+
+  if (e.manual) {
+    const mins = Math.floor((e.duration || 0) / 60000);
+    openDialog(`<h2>Edit manual entry</h2><div class="small muted">Added at ${fmtTime(e.createdAt)}</div>
+      <form method="dialog" id="ef">${projectSelect}
+        <div class="row" style="align-items:flex-end">
+          <div class="grow"><label for="eh">Hours</label><input id="eh" type="number" inputmode="numeric" min="0" max="24" value="${Math.floor(mins / 60)}"></div>
+          <div class="grow"><label for="em">Minutes</label><input id="em" type="number" inputmode="numeric" min="0" max="59" value="${mins % 60}"></div>
+        </div>
+        <div class="err" id="eerr"></div>
+        <div class="actions"><button type="button" class="btn text" id="ecancel">Cancel</button>
+          <button type="submit" class="btn text" id="esave">Save</button></div></form>`, d => {
+      const hEl = d.querySelector('#eh'), mEl = d.querySelector('#em'), proj = d.querySelector('#eproj');
+      const save = d.querySelector('#esave'), err = d.querySelector('#eerr');
+      let duration = e.duration;
+      const check = () => {
+        const h = hEl.value.trim() === '' ? 0 : Number(hEl.value), m = mEl.value.trim() === '' ? 0 : Number(mEl.value);
+        let msg = '';
+        if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || m < 0) msg = 'Enter whole hours and minutes';
+        else if (m > 59) msg = 'Minutes must be 0–59';
+        const total = h * 60 + m;
+        duration = total === mins ? e.duration : total * 60000;   // unchanged keeps the exact amount
+        if (!msg && total <= 0) msg = 'Enter an amount of time';
+        if (!msg && total > 24 * 60) msg = 'Up to 24 hours at a time';
+        err.textContent = msg;
+        save.disabled = !!msg || (duration === e.duration && Number(proj.value) === e.projectId);
+      };
+      hEl.oninput = mEl.oninput = proj.onchange = check; check();
+      d.querySelector('#ecancel').onclick = () => d.close();
+      d.querySelector('#ef').onsubmit = ev => {
+        ev.preventDefault(); check();
+        if (save.disabled) return;
+        d.close();
+        editEntry(e.id, { projectId: Number(proj.value), duration });
+      };
+    });
+    return;
+  }
+
+  const running = e.end == null;
+  openDialog(`<h2>Edit time entry</h2>
+    <form method="dialog" id="ef">${projectSelect}
+      <div class="row" style="align-items:flex-end">
+        <div class="grow"><label for="estart">Start</label><input id="estart" type="time" step="60" value="${timeValue(e.start)}"></div>
+        <div class="grow">${running ? '<div class="small muted" style="padding:10px 0">Still running</div>'
+          : `<label for="eend">Stop</label><input id="eend" type="time" step="60" value="${timeValue(e.end)}">`}</div>
+      </div>
+      <div class="small muted" style="margin-top:8px">The entry is marked as manual and keeps its original times.</div>
+      <div class="err" id="eerr"></div>
+      <div class="actions"><button type="button" class="btn text" id="ecancel">Cancel</button>
+        <button type="submit" class="btn text" id="esave">Save</button></div></form>`, d => {
+    const sEl = d.querySelector('#estart'), eEl = d.querySelector('#eend'), proj = d.querySelector('#eproj');
+    const save = d.querySelector('#esave'), err = d.querySelector('#eerr');
+    let start = e.start, end = e.end;
+    const check = () => {
+      start = resolveTime(e, sEl.value, e.start);
+      end = running ? null : resolveTime(e, eEl.value, e.end);
+      let msg = (isNaN(start) || (!running && isNaN(end))) ? 'Enter a time' : validateTimer(e, start, end, Date.now());
+      err.textContent = msg || '';
+      save.disabled = !!msg || (start === e.start && end === e.end && Number(proj.value) === e.projectId);
+    };
+    sEl.oninput = sEl.onchange = proj.onchange = check;
+    if (eEl) eEl.oninput = eEl.onchange = check;
+    check();
+    d.querySelector('#ecancel').onclick = () => d.close();
+    d.querySelector('#ef').onsubmit = ev => {
+      ev.preventDefault(); check();
+      if (save.disabled) return;
+      d.close();
+      editEntry(e.id, { projectId: Number(proj.value), start, end });
+    };
+  });
+}
+
 /* ---------- backup ---------- */
 function exportBackup() {
   const data = { app: 'timesheet', version: 1, exportedAt: new Date().toISOString(),
@@ -859,14 +1011,16 @@ main.addEventListener('click', async e => {
     case 'stop': stopAll(); break;
     case 'change-start': changeStartDialog(); break;
     case 'toggle-log': showLog = !showLog; render(); break;
-    case 'del-manual': {
+    case 'del-entry': {
       const en = S.entries.find(x => x.id === id);
       if (!en) break;
-      const ok = await confirmDialog('Delete manual entry?',
-        `+${fmtDur(en.duration || 0)} on ${projLabel(projectById(en.projectId))}, added at ${fmtTime(en.createdAt)}.`, 'Delete', true);
-      if (ok) deleteManual(id);
+      const ok = await confirmDialog('Delete entry?',
+        `${describeEntry(en)} on ${projLabel(projectById(en.projectId))} will be permanently deleted.` +
+        (isRunning(en) ? ' The timer stops.' : ''), 'Delete', true);
+      if (ok) deleteEntry(id);
       break;
     }
+    case 'edit-entry': editEntryDialog(id); break;
     case 'expand': {
       const day = Number(el.dataset.day);
       expanded.has(day) ? expanded.delete(day) : expanded.add(day);

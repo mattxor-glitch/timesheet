@@ -15,6 +15,9 @@ Starting another project stops the current one, and tapping the running tile sto
 - **Change start time**: while a timer is running, tap *Change start* (or long-press its tile). The entry is
   marked **manual** and shows the original start and when it was changed. It can't go before midnight or
   before the previous timer's stop time.
+- **Edit and delete entries**: in a day's log, each entry can be deleted (any day) or edited (today):
+  start/stop times, project, or a manual entry's amount. Edits can't overlap other entries or go into the
+  future; they're marked **manual** with the edit time and the original values.
 - **History**: previous days, with per-project and daily totals in `h:mm` and decimal hours.
 - **History retention**: 1 week up to 5 years, or *Never delete* (the default).
 - **Size warning**: a banner appears when the database is over 50 MB.
