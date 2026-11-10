@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [Project::class, TimeEntry::class], version = 4, exportSchema = false)
+@Database(entities = [Project::class, TimeEntry::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): TimesheetDao
 
@@ -42,13 +42,21 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds labour-hour budgets to projects. Existing data is kept. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE projects ADD COLUMN budgetMillis INTEGER")
+                db.execSQL("ALTER TABLE projects ADD COLUMN prunedMillis INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, NAME)
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }

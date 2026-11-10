@@ -13,6 +13,11 @@ data class Project(
     val name: String,
     /** Removed projects are hidden from the tiles but kept so history still shows their names. */
     val archived: Boolean = false,
+    /** Labour hours allotted to the job, in milliseconds. Null = no budget set. */
+    val budgetMillis: Long? = null,
+    /** Time from this project's entries that were removed by history clean-up, so the hours
+        used on the job don't drop when old history is cleared. */
+    @ColumnInfo(defaultValue = "0") val prunedMillis: Long = 0,
 )
 
 /**
@@ -68,6 +73,11 @@ data class TimeEntry(
 
     val isAdjustment: Boolean get() = manual && setTotalMillis != null
 }
+
+data class ProjectTotal(
+    val projectId: Long,
+    val totalMillis: Long,
+)
 
 data class DayProjectTotal(
     val day: Long,

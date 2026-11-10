@@ -21,6 +21,39 @@ interface TimesheetDao {
     @Update
     suspend fun updateProject(project: Project)
 
+    @Query("UPDATE projects SET number = :number, name = :name, budgetMillis = :budgetMillis WHERE id = :id")
+    suspend fun updateProjectDetails(id: Long, number: String, name: String, budgetMillis: Long?)
+
+    @Query("UPDATE projects SET archived = 1 WHERE id = :id")
+    suspend fun archiveProject(id: Long)
+
+    @Query("UPDATE projects SET prunedMillis = prunedMillis + :millis WHERE id = :id")
+    suspend fun addPrunedMillis(id: Long, millis: Long)
+
+    /** All-time finished time per project (timer entries, manual entries and adjustments). */
+    @Query(
+        """
+        SELECT projectId,
+            SUM(CASE WHEN manual = 1 THEN COALESCE(durationMillis, 0) ELSE endMillis - startMillis END) AS totalMillis
+        FROM time_entries
+        WHERE endMillis IS NOT NULL
+        GROUP BY projectId
+        """
+    )
+    fun observeProjectTotals(): Flow<List<ProjectTotal>>
+
+    /** Finished time per project in entries dated before [day] (what a history clean-up removes). */
+    @Query(
+        """
+        SELECT projectId,
+            SUM(CASE WHEN manual = 1 THEN COALESCE(durationMillis, 0) ELSE endMillis - startMillis END) AS totalMillis
+        FROM time_entries
+        WHERE day < :day AND endMillis IS NOT NULL
+        GROUP BY projectId
+        """
+    )
+    suspend fun totalsBefore(day: Long): List<ProjectTotal>
+
     @Query("SELECT * FROM time_entries WHERE day = :day ORDER BY startMillis, id")
     fun observeEntriesForDay(day: Long): Flow<List<TimeEntry>>
 

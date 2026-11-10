@@ -1,5 +1,6 @@
 package com.mattxor.timesheet.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -26,6 +28,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
@@ -63,6 +68,7 @@ fun TimersScreen(
     val now by vm.now.collectAsStateWithLifecycle()
     val dbSize by vm.dbSizeBytes.collectAsStateWithLifecycle()
     val projectsById by vm.projectsById.collectAsStateWithLifecycle()
+    val projectTotals by vm.projectTotals.collectAsStateWithLifecycle()
     var showLog by rememberSaveable { mutableStateOf(false) }
     var actionsFor by remember { mutableStateOf<Project?>(null) }
     var addTimeFor by remember { mutableStateOf<Project?>(null) }
@@ -174,6 +180,7 @@ fun TimersScreen(
             ProjectTile(
                 project = project,
                 totalMillis = totals[project.id] ?: 0L,
+                remaining = remainingMillis(project, projectTotals, entries, now),
                 isRunning = running?.projectId == project.id,
                 onTap = {
                     haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -275,6 +282,7 @@ fun TimersScreen(
 private fun ProjectTile(
     project: Project,
     totalMillis: Long,
+    remaining: Long?,
     isRunning: Boolean,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
@@ -287,8 +295,11 @@ private fun ProjectTile(
     } else {
         CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
     }
+    val level = remaining?.let { budgetLevel(it) }
+    val levelColor = level?.color()
     Card(
         colors = colors,
+        border = levelColor?.let { BorderStroke(3.dp, it) },
         elevation = CardDefaults.cardElevation(defaultElevation = if (isRunning) 6.dp else 1.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -327,6 +338,22 @@ private fun ProjectTile(
                     style = MaterialTheme.typography.titleMedium,
                     fontFamily = FontFamily.Monospace,
                 )
+                if (remaining != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Surface(
+                        color = levelColor ?: Color.Transparent,
+                        contentColor = if (levelColor != null) Color.White else LocalContentColor.current,
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Text(
+                            "Left ${formatSignedHm(remaining)} h",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = if (levelColor != null) 6.dp else 0.dp, vertical = 2.dp),
+                        )
+                    }
+                }
             }
         }
     }

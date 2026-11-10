@@ -160,18 +160,19 @@ class TimesheetRepository(context: Context, val settings: Settings) {
             }
         }
 
-    suspend fun addProject(number: String, name: String) {
-        dao.insertProject(Project(number = number.trim(), name = name.trim()))
+    suspend fun addProject(number: String, name: String, budgetMillis: Long?) {
+        dao.insertProject(Project(number = number.trim(), name = name.trim(), budgetMillis = budgetMillis))
     }
 
+    /** Updates only the editable details, so it can't overwrite other fields with stale values. */
     suspend fun updateProject(project: Project) {
-        dao.updateProject(project.copy(number = project.number.trim(), name = project.name.trim()))
+        dao.updateProjectDetails(project.id, project.number.trim(), project.name.trim(), project.budgetMillis)
     }
 
     /** Hides the tile but keeps the project so its history still shows up. */
     suspend fun removeProject(project: Project, now: Long = System.currentTimeMillis()) = db.withTransaction {
         dao.getRunningFor(project.id).forEach { dao.closeEntry(it.id, now) }
-        dao.updateProject(project.copy(archived = true))
+        dao.archiveProject(project.id)
     }
 
     /**
@@ -201,14 +202,25 @@ class TimesheetRepository(context: Context, val settings: Settings) {
     /** Applies the retention setting. */
     suspend fun pruneHistory(now: Long = System.currentTimeMillis()): Int {
         val days = settings.retention.value.days ?: return 0
-        return dao.deleteBefore(dayOf(now) - days)
+        return removeHistoryBefore(dayOf(now) - days)
     }
 
     /** Clears history dated before [day] (exclusive) and shrinks the database file. */
     suspend fun clearBefore(day: Long): Int {
-        val deleted = dao.deleteBefore(day)
+        val deleted = removeHistoryBefore(day)
         compact()
         return deleted
+    }
+
+    /**
+     * Deletes old history but keeps its time counted against each project's labour hours,
+     * so clearing history never gives hours back to a job.
+     */
+    private suspend fun removeHistoryBefore(day: Long): Int = db.withTransaction {
+        dao.totalsBefore(day).forEach { t ->
+            if (t.totalMillis != 0L) dao.addPrunedMillis(t.projectId, t.totalMillis)
+        }
+        dao.deleteBefore(day)
     }
 
     suspend fun compact() = withContext(Dispatchers.IO) {

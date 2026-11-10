@@ -62,6 +62,11 @@ class TimesheetViewModel(app: Application) : AndroidViewModel(app) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** All-time finished time per project (running timers are added on screen). */
+    val projectTotals: StateFlow<Map<Long, Long>> = repo.dao.observeProjectTotals()
+        .map { list -> list.associate { it.projectId to it.totalMillis } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     val oldestDay: StateFlow<Long?> = repo.dao.observeOldestDay()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -160,8 +165,8 @@ class TimesheetViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.stopAll() }
     }
 
-    fun addProject(number: String, name: String) {
-        viewModelScope.launch { repo.addProject(number, name) }
+    fun addProject(number: String, name: String, budgetMillis: Long?) {
+        viewModelScope.launch { repo.addProject(number, name, budgetMillis) }
     }
 
     fun updateProject(project: Project) {

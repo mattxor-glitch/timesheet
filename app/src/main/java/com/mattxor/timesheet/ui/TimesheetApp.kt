@@ -47,6 +47,10 @@ fun TimesheetApp(vm: TimesheetViewModel = viewModel()) {
     var editing by remember { mutableStateOf<ProjectEdit?>(null) }
     val snackbar = remember { SnackbarHostState() }
     val today by vm.today.collectAsStateWithLifecycle()
+    val projectsById by vm.projectsById.collectAsStateWithLifecycle()
+    val projectTotals by vm.projectTotals.collectAsStateWithLifecycle()
+    val todayEntries by vm.todayEntries.collectAsStateWithLifecycle()
+    val now by vm.now.collectAsStateWithLifecycle()
 
     // Tick once a second while visible; also performs the midnight reset.
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -125,10 +129,15 @@ fun TimesheetApp(vm: TimesheetViewModel = viewModel()) {
         ProjectDialog(
             project = edit.project,
             onDismiss = { editing = null },
-            onSave = { number, name ->
-                if (edit.project == null) vm.addProject(number, name)
-                else vm.updateProject(edit.project.copy(number = number, name = name))
+            onSave = { number, name, budget ->
+                if (edit.project == null) vm.addProject(number, name, budget)
+                else vm.updateProject(edit.project.copy(number = number, name = name, budgetMillis = budget))
                 editing = null
+            },
+            usedMillis = edit.project?.let { p ->
+                // Use the latest copy of the project (its cleared-history time may have changed).
+                val latest = projectsById[p.id] ?: p
+                usedMillis(latest, projectTotals, todayEntries, now)
             },
             onRemove = edit.project?.let { p ->
                 {

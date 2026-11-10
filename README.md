@@ -6,6 +6,9 @@ Starting another project stops the current one, and tapping the running tile sto
 ## Features
 
 - **Project tiles**: number and name, with today's running total on each tile. Long-press a tile to add time, change the start time, or edit/remove it (history is kept).
+- **Labour hours**: give a project its allotted hours (optional). Each tile shows the hours left on the job,
+  counting all time ever logged on it. The tile turns **orange** at 10 hours or less and **red** at 0 or below,
+  and keeps counting into negative. Clearing old history doesn't give hours back; deleting a mistaken entry does.
 - **Daily reset**: every timer starts at zero each day. A timer left running at midnight is stopped,
   or carried into the new day if you turn on *Keep timer running past midnight*.
 - **Time-stamped log**: every start and stop is recorded with its clock time. Tap *Today's log* on the
