@@ -40,7 +40,7 @@ fun remainingMillis(project: Project, totals: Map<Long, Long>, todayEntries: Lis
 
 /** "12:30" or "−3:15" (hours:minutes). */
 fun formatSignedHm(millis: Long): String {
-    val minutes = abs(millis) / 60_000
+    val minutes = (abs(millis) + 30_000) / 60_000 // nearest minute, so used + left add up
     val sign = if (millis < 0 && minutes > 0) "−" else ""
     return String.format(Locale.US, "%s%d:%02d", sign, minutes / 60, minutes % 60)
 }
